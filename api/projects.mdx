@@ -1,0 +1,79 @@
+---
+title: "Projects"
+description: "Ingest generated documents into a project's vector store for use in subsequent RAG queries."
+---
+
+The projects endpoints allow the Flutter client to notify the backend when new documents have been generated. Each document is split into chunks and upserted into a per-project ChromaDB collection so it can be retrieved as context in future chat requests.
+
+---
+
+## POST /api/v1/projects/{project_id}/documents/ingest
+
+Splits a markdown document into chunks and upserts them into the per-project ChromaDB vector store. This operation is idempotent — calling it again with the same content is safe.
+
+### Path parameters
+
+<ParamField path="project_id" type="string" required>
+  The unique identifier for the project. This value scopes the vector store collection so documents from different projects do not mix.
+</ParamField>
+
+### Request body
+
+<ParamField body="doc_name" type="string" required>
+  Human-readable document name, for example `PROJECT_MANIFESTO.md`. Between 1 and 255 characters.
+</ParamField>
+
+<ParamField body="markdown_content" type="string" required>
+  Full markdown text of the document to ingest. Must be at least 1 character.
+</ParamField>
+
+### Response
+
+```json
+{
+  "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "doc_name": "PROJECT_MANIFESTO.md",
+  "chunks_ingested": 12
+}
+```
+
+<ResponseField name="project_id" type="string">
+  The target project identifier, echoed from the path parameter.
+</ResponseField>
+
+<ResponseField name="doc_name" type="string">
+  Name of the ingested document, echoed from the request body.
+</ResponseField>
+
+<ResponseField name="chunks_ingested" type="integer">
+  Number of text chunks stored in the vector collection. Depends on document length and the chunking configuration.
+</ResponseField>
+
+### Errors
+
+| Status | Condition |
+|---|---|
+| `400 Bad Request` | Request payload is invalid (e.g., empty `markdown_content`) |
+| `500 Internal Server Error` | Backend ingestion failure — check server logs |
+
+### Example
+
+<CodeGroup>
+```bash curl
+curl -X POST \
+  http://localhost:8000/api/v1/projects/7c9e6679-7425-40de-944b-e07fc1f90ae7/documents/ingest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "doc_name": "PROJECT_MANIFESTO.md",
+    "markdown_content": "# Project Manifesto\n\nThis project aims to...\n"
+  }'
+```
+</CodeGroup>
+
+```json
+{
+  "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "doc_name": "PROJECT_MANIFESTO.md",
+  "chunks_ingested": 3
+}
+```

@@ -1,0 +1,190 @@
+---
+title: "RAG engine"
+description: "How Retrieval-Augmented Generation powers architectural recommendations"
+---
+
+SoftArchitect AI uses Retrieval-Augmented Generation (RAG) to ground every architectural recommendation in a curated, versioned knowledge base. Instead of relying solely on an LLM's training data, RAG retrieves the most relevant technical documentation at query time and injects it into the prompt — ensuring responses reflect your specific technology choices, security policies, and architecture patterns rather than generic internet content.
+
+## Why RAG matters for architecture
+
+LLMs trained on general code and documentation tend to produce plausible-sounding but context-free recommendations. For architecture work this is especially risky: a suggestion to "use a repository pattern" is only useful if it accounts for your actual tech stack, your team's coding standards, and the compliance requirements of your domain.
+
+RAG solves this by:
+
+- **Grounding responses** in the project's own knowledge base (Tech Packs, templates, examples)
+- **Preventing hallucinations** by injecting verified technical content before the LLM generates anything
+- **Enabling offline operation** — the vector store is local, so no data leaves your machine
+
+## The RAG pipeline
+
+<Steps>
+  <Step title="User query">
+    The user sends a message through the Flutter chat UI. Before reaching the backend, the message is validated against `CHAT_MAX_MESSAGE_LENGTH` (default 20,000 characters) and passed through the input sanitizer.
+  </Step>
+  <Step title="Prompt sanitization">
+    `InputSanitizer.sanitize_message()` applies a two-step defence:
+
+    ```python
+    @staticmethod
+    def sanitize_message(text: str) -> str:
+        # Step 1: Strip whitespace
+        text = text.strip()
+        # Step 2: HTML entity escaping (preserves code snippets)
+        text = InputSanitizer.sanitize_html(text)
+        # Step 3: Prompt injection detection (logs, does not block)
+        detected_pattern = InputSanitizer.detect_prompt_injection(text)
+        if detected_pattern:
+            logger.warning(
+                f"User input flagged for prompt injection: "
+                f"pattern='{detected_pattern}', length={len(text)}"
+            )
+        return text
+    ```
+
+    Injection patterns such as `ignore previous instructions` or `you are now a different` are detected and logged. The sanitised text continues through the pipeline — the detection is non-blocking by design so legitimate architecture prompts are never silently dropped.
+  </Step>
+  <Step title="Dual-channel retrieval">
+    The `SequentialOrchestrator` runs two parallel retrieval paths:
+
+    1. **Global knowledge-base search** — queries ChromaDB's `softarchitect_kb` collection for general software-engineering knowledge relevant to the user's input.
+    2. **Per-project semantic search** — queries a project-specific ChromaDB collection using the composite query `"Context for {doc_type}: {user_input}"`, returning the top-k most relevant chunks from documents already generated for this project.
+
+    ```python
+    rag_context = await self._retrieve_user_context(user_input)
+
+    project_id = str(context.get("project_id", ""))
+    retrieved_context = self._retrieve_project_context(
+        project_id, doc_type, user_input
+    )
+    ```
+  </Step>
+  <Step title="Prompt assembly">
+    The orchestrator assembles the final prompt in a deterministic order using XML tags for LLM clarity:
+
+    ```python
+    # Ordered sections injected into the prompt:
+    # 1. Workflow injection block  — template + example for the target doc type
+    # 2. Global RAG context        — <rag_context> from the knowledge base
+    # 3. Per-project context       — <retrieved_context> from ChromaDB
+    # 4. Critical rules            — strict output format instructions
+    # 5. Conversation history      — last 4 messages (truncated)
+    # 6. User input                — the current user request
+    ```
+
+    A hard safety cap truncates the assembled prompt to `LLM_MAX_PROMPT_CHARS` (default 200,000) before it is sent. The cap never silently drops RAG context — it truncates from the end of the assembled string so critical architectural context always reaches the model.
+  </Step>
+  <Step title="LLM generation (streaming)">
+    The assembled prompt is sent to the active LLM provider via `BaseLLMClient.stream_generate()`. Tokens are yielded incrementally as they arrive:
+
+    ```python
+    async for token in self.llm_client.stream_generate(prompt, history=[]):
+        yield token
+    ```
+  </Step>
+  <Step title="Server-Sent Events to the client">
+    The `/api/v1/chat/stream` endpoint wraps each token in an SSE frame and flushes it to the Flutter client:
+
+    ```python
+    async for token in orchestrator.generate(
+        doc_type=doc_type, user_input=request.message, context=context
+    ):
+        yield f"event: message\ndata: {json.dumps({'token': token, 'is_final': False})}\n\n"
+
+    yield f"event: done\ndata: {json.dumps(done_data)}\n\n"
+    ```
+
+    Error events use typed codes (`LLM_CONNECTION_ERROR`, `RAG_RETRIEVAL_ERROR`, `STREAM_ERROR`) so the client can decide whether to offer a retry.
+  </Step>
+</Steps>
+
+## Vector store: ChromaDB
+
+All knowledge base content is embedded and stored in ChromaDB, running as a local Docker container. After ingestion the store contains:
+
+| Metric | Value |
+|--------|-------|
+| Documents | 29 |
+| Vector embeddings | 934 |
+| Collections | 3 (`tech-packs`, `templates`, `examples`) |
+
+Verify the state of the store at any time by querying ChromaDB directly:
+
+```bash
+curl http://localhost:8001/api/v1/collections
+```
+
+The ChromaDB HTTP API returns the list of active collections. You should see the `softarchitect` collection after ingestion.
+
+<Note>
+  A dedicated `/api/v1/knowledge/status` API endpoint is planned for Phase 2. Until then, use the ChromaDB API at `http://localhost:8001` to inspect collection state.
+</Note>
+
+The `VectorStoreService` connects over HTTP and wraps all operations with a retry decorator (exponential backoff, 3 attempts) and deterministic SHA-256 document IDs for idempotent ingestion:
+
+```python
+def _generate_id(self, content: str, source: str) -> str:
+    """Generate deterministic ID for document (hash-based).
+    Uses SHA-256 instead of MD5 for collision resistance."""
+    raw_id = f"{content.strip()}::{source.strip()}"
+    return hashlib.sha256(raw_id.encode("utf-8")).hexdigest()
+```
+
+Running ingestion twice with the same files produces the same IDs — ChromaDB's upsert semantics mean no duplicates are created.
+
+## Chunking and embedding
+
+The `DocumentLoader` reads every `.md` file under `packages/knowledge_base/`, cleans it with `MarkdownCleaner`, and performs semantic splitting:
+
+```python
+def _semantic_split(
+    self, content: str, metadata: DocumentMetadata
+) -> list[DocumentChunk]:
+    """
+    Strategy:
+    1. Split by H2 headers (semantic boundaries)
+    2. If sections too large, split by H3
+    3. If still too large, split by paragraphs
+    4. Ensure min/max chunk sizes
+    """
+```
+
+Chunk size defaults are 500–2,000 characters. The cleaner removes HTML tags and comments, normalises Unicode to NFKC, and strips prompt-injection payloads (`javascript:`, `data:` URIs, `<script>` and `<iframe>` blocks) before any content reaches the vector store.
+
+## Configuration
+
+Two environment variables control the RAG context budget. Set them in `.env` based on your LLM provider's context window:
+
+```bash
+# .env — Cloud APIs (Gemini / Groq): maximum context
+LLM_MAX_PROMPT_CHARS=200000
+RAG_MAX_CHUNKS=3
+
+# .env — Local Ollama with 8K context window: prevents OOM
+LLM_MAX_PROMPT_CHARS=30000
+RAG_MAX_CHUNKS=2
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_MAX_PROMPT_CHARS` | `200000` | Hard cap on assembled prompt size (characters ≈ tokens × 4). |
+| `RAG_MAX_CHUNKS` | `3` | Number of per-project chunks returned by semantic search. |
+
+<Note>
+  `LLM_MAX_PROMPT_CHARS` truncates the assembled prompt from the end, never silently drops RAG context blocks. Architectural recommendations always remain grounded in the knowledge base even when truncation occurs.
+</Note>
+
+## Prompt safety
+
+SoftArchitect AI applies three distinct sanitization layers before any user content reaches the LLM:
+
+<CardGroup cols={3}>
+  <Card title="HTML escaping" icon="shield">
+    `html.escape()` converts `<script>` to `&lt;script&gt;`, preserving code snippets like `List<String>` that regex stripping would destroy.
+  </Card>
+  <Card title="Injection detection" icon="eye">
+    Seven regex patterns cover common prompt injection attempts (`ignore previous instructions`, `you are now`, `system:`, etc.). Detections are logged with full context for audit.
+  </Card>
+  <Card title="Content sanitization" icon="filter">
+    `MarkdownCleaner` strips `javascript:` links, `data:` URIs, and `<iframe>`/`<script>` tags from knowledge base content during ingestion so malicious payloads can never enter the vector store.
+  </Card>
+</CardGroup>

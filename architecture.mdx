@@ -1,0 +1,163 @@
+---
+title: "Architecture"
+description: "SoftArchitect AI is built on Clean Architecture and the Hexagonal (Ports & Adapters) pattern across a Flutter desktop frontend and a Python FastAPI backend."
+---
+
+SoftArchitect AI is structured as a **monorepo** with a strict separation between the Flutter desktop client, the Python backend, the RAG knowledge base, and the infrastructure layer. The guiding principle throughout is Clean Architecture: domain logic never depends on frameworks, databases, or UI.
+
+## Repository structure
+
+```text
+soft-architect-ai/
+├── src/
+│   ├── client/              # Flutter Desktop app (Clean Architecture)
+│   └── server/              # Python FastAPI backend (Modular Monolith)
+├── packages/
+│   └── knowledge_base/      # RAG brain — Tech Packs, Templates, Examples
+├── context/                 # Agent rules and project metadata
+├── doc/                     # Living project documentation
+└── infrastructure/          # Docker Compose, Nginx, DevOps configs
+```
+
+> **Golden rule:** "A place for everything, and everything in its place." The directory structure is immutable without prior architectural discussion.
+
+## Architectural layers
+
+<CardGroup cols={2}>
+  <Card title="Domain layer" icon="circle-dot">
+    Pure business logic with no external dependencies. Contains entities, use cases, and repository interfaces. Written in pure Dart (client) or pure Python (server) — no Flutter, FastAPI, or database imports allowed.
+  </Card>
+  <Card title="Data layer" icon="database">
+    Adapter implementations of the domain repository interfaces. Handles DTOs, data sources, ChromaDB queries, and LLM provider calls. This is the only layer that knows about external systems.
+  </Card>
+  <Card title="Presentation layer" icon="monitor">
+    Flutter widgets, screens, and Riverpod providers on the client. FastAPI routers on the server. Both delegate business decisions upward to the domain layer and never contain logic.
+  </Card>
+  <Card title="Infrastructure layer" icon="container">
+    Docker Compose orchestration, health checks, volume mounts, and network configuration. Defined in `infrastructure/docker-compose.yml` and managed by the scripts in `scripts/devops/`.
+  </Card>
+</CardGroup>
+
+## Backend architecture
+
+The backend is a **modular monolith** built with FastAPI and LangChain, organized by domain.
+
+```text
+src/server/app/
+├── main.py                  # FastAPI entry point, lifespan, CORS, error handlers
+├── core/
+│   ├── config.py            # Pydantic Settings — all config from .env
+│   ├── database.py          # ChromaDB and SQLite initialization
+│   └── security.py          # Input sanitizers and prompt validators
+├── api/
+│   └── v1/
+│       ├── chat.py          # Chat endpoints and WebSocket streaming
+│       ├── knowledge.py     # Knowledge base ingestion and retrieval
+│       └── health.py        # Health check endpoints
+├── domain/
+│   ├── entities/            # Core entities: Message, Session
+│   ├── services/            # Use cases and business rules
+│   └── repositories/        # Abstract data interfaces (Ports)
+└── infrastructure/
+    ├── llm/                 # LLM adapters: Ollama, Groq, Gemini
+    ├── vector_store/        # ChromaDB adapter implementation
+    └── external/            # Third-party API integrations
+```
+
+### RAG pipeline
+
+The Retrieval-Augmented Generation pipeline is the core of the backend:
+
+1. User input is sanitized through `core/security.py` before it reaches the LLM.
+2. The query is embedded and matched against ChromaDB collections (`tech-packs`, `templates`, `examples`).
+3. Up to `RAG_MAX_CHUNKS` relevant chunks are retrieved and prepended to the prompt.
+4. The assembled prompt (capped at `LLM_MAX_PROMPT_CHARS`) is sent to the configured LLM provider.
+5. The response streams token-by-token over a WebSocket connection to the Flutter client.
+
+### LLM providers
+
+The active provider is selected by `LLM_PROVIDER` in `.env`. Three adapters are implemented:
+
+| Provider | Value | Description |
+|---|---|---|
+| Google Gemini | `gemini` | Default. Cloud API, large context window. |
+| Groq Cloud | `groq` | Ultra-fast cloud inference via `llama-3.3-70b-versatile`. |
+| Ollama | `ollama` | 100% local inference. Recommended models: `qwen2.5-coder:7b`, `llama3.2`. |
+
+### Streaming configuration
+
+WebSocket streaming behavior is controlled by four settings in `config.py`:
+
+| Setting | Default | Description |
+|---|---|---|
+| `WS_HEARTBEAT_INTERVAL_SECONDS` | `30.0` | Keepalive ping interval |
+| `WS_IDLE_TIMEOUT_SECONDS` | `300.0` | Max idle time before disconnect |
+| `WS_TOKEN_DELAY_SECONDS` | `0.05` | Delay between streamed tokens |
+| `WS_BACKPRESSURE_THRESHOLD_BYTES` | `102400` | Buffer threshold before throttling |
+
+## Frontend architecture
+
+The Flutter desktop client follows **Clean Architecture** organized by feature ("Feature-First").
+
+```text
+src/client/lib/
+├── main.dart                # App entry point
+├── core/
+│   ├── config/              # Environment variables and theme config
+│   ├── router/              # GoRouter route definitions
+│   └── utils/               # Pure helper functions
+├── features/
+│   ├── chat/                # Primary feature
+│   │   ├── domain/          # Entities and repository contracts (interfaces)
+│   │   ├── data/            # Repository implementations and API data sources
+│   │   └── presentation/    # Screens, widgets, and Riverpod providers
+│   ├── settings/            # LLM provider configuration (local vs cloud)
+│   ├── filesystem/          # File system browsing and project file access
+│   └── project_shell/       # Project shell and workspace management
+└── shared/                  # Reusable UI widgets (buttons, inputs, etc.)
+```
+
+### State management
+
+The client uses [Riverpod](https://riverpod.dev) for state management. All providers live in the `presentation/` layer of each feature. Domain use cases are exposed as `AsyncNotifier` or `StreamNotifier` providers — never called directly from widgets.
+
+<Note>
+  Color opacity in all Flutter code uses `withValues(alpha: x.x)` — the `withOpacity()` method is deprecated and not used anywhere in the codebase.
+</Note>
+
+## Knowledge base structure
+
+The RAG brain lives in `packages/knowledge_base/` and is organized for modular ingestion:
+
+```text
+packages/knowledge_base/
+├── 00-META-CONTEXT/         # System personality and architectural vision
+├── 01-TEMPLATES/            # Reusable templates: ADRs, security checklists
+├── 02-TECH-PACKS/           # Technology-specific rules
+│   ├── flutter/             # Flutter best practices and patterns
+│   ├── python/              # Python architecture patterns
+│   └── general/             # Cross-cutting concerns (SOLID, OWASP)
+└── 03-EXAMPLES/             # Reference project structures
+```
+
+The knowledge base contains 29 files totalling 934 lines and is split into three ChromaDB collections: `tech-packs`, `templates`, and `examples`.
+
+## Infrastructure
+
+Three Docker services are defined in `infrastructure/docker-compose.yml` and communicate over a private bridge network (`sa_network`, subnet `172.25.0.0/16`):
+
+| Container | Image | Host port | Role |
+|---|---|---|---|
+| `sa_api` | Custom build from `src/server` | `8000` | FastAPI backend |
+| `sa_chromadb` | `chromadb/chroma` | `8001` | Vector store |
+| `sa_ollama` | `ollama/ollama` | `11434` | Local LLM engine |
+
+The API container depends on both ChromaDB and Ollama health checks passing before it starts. All persistent data (ChromaDB embeddings, Ollama model weights, logs) is stored in named volumes under `infrastructure/`.
+
+## Architectural decision records
+
+Key design decisions are documented as ADRs in `context/30-ARCHITECTURE/ADR/`:
+
+- **ADR-002** — Configurable RAG limits (`LLM_MAX_PROMPT_CHARS`, `RAG_MAX_CHUNKS`): explains the truncation-over-dropping safety net and hardware-agnostic tuning approach.
+
+All new architectural decisions that affect the domain model, provider contracts, or directory structure should be recorded as ADRs before implementation.

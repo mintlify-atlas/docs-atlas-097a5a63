@@ -1,0 +1,163 @@
+---
+title: "Knowledge base"
+description: "The RAG brain — curated technical knowledge powering architectural recommendations"
+---
+
+The knowledge base is the content layer of SoftArchitect AI's RAG engine. It is a versioned collection of Markdown files organized into Tech Packs, templates, and examples. When you ask a question, the RAG engine retrieves the most relevant chunks from this library and injects them into the LLM prompt — ensuring every recommendation is grounded in tested architectural patterns rather than hallucinated generalities.
+
+## Structure
+
+```text
+packages/knowledge_base/
+├── 00-META/                    # Ontology, workflow rules, AI persona prompts
+│   ├── AI_PERSONA_PROMPT.md
+│   ├── MASTER_WORKFLOW_HUMAN.md
+│   ├── PROJECT_ONTOLOGY.md
+│   └── WORKFLOW_RULES.yaml
+├── 01-TEMPLATES/               # Structured templates for all 24 workflow documents
+│   ├── 00-ROOT/                # README, AGENTS, RULES, CONTRIBUTING templates
+│   ├── 10-CONTEXT/             # Project manifesto, domain language, user journey
+│   ├── 20-REQUIREMENTS/        # Requirements, user stories, security, compliance
+│   ├── 30-ARCHITECTURE/        # Tech stack, data model, API contract, ADRs
+│   ├── 35-UX_UI/               # Design system, wireframes, accessibility
+│   └── 40-PLANNING/            # Roadmap, CI/CD, deployment, testing
+├── 02-TECH-PACKS/              # Modular architectural encyclopedia by domain
+│   ├── AI_ENGINEERING/
+│   ├── BACKEND/
+│   ├── DATA/
+│   ├── DEVOPS_CLOUD/
+│   ├── FRONTEND/
+│   └── general/
+├── 03-EXAMPLES/                # Reference implementations
+└── MASTER_WORKFLOW_EXAMPLES/   # Populated example for every workflow doc type
+    ├── PROJECT_MANIFESTO_EXAMPLE.md
+    ├── TECH_STACK_DECISION_EXAMPLE.md
+    ├── AGENTS_EXAMPLE.md
+    └── ...  (25 files total)
+```
+
+## The three ChromaDB collections
+
+After ingestion the knowledge base is stored across three ChromaDB collections. The RAG engine queries all three when assembling context for the LLM.
+
+<CardGroup cols={3}>
+  <Card title="tech-packs" icon="book-open">
+    Modular architectural guidelines organized by technology domain: frontend, backend, data, DevOps/cloud, and AI engineering. Used when the user asks about stack-specific patterns.
+  </Card>
+  <Card title="templates" icon="file-text">
+    Structured Markdown templates for all 24 workflow documents. Injected verbatim into the prompt by the `WorkflowInjector` so the LLM always follows the correct output format.
+  </Card>
+  <Card title="examples" icon="lightbulb">
+    Fully-populated example documents from `MASTER_WORKFLOW_EXAMPLES/`. Shown to the LLM alongside the template so it understands the expected level of detail and realism.
+  </Card>
+</CardGroup>
+
+## Numbers at a glance
+
+| Metric | Value |
+|--------|-------|
+| Total documents | 29 |
+| Vector embeddings | 934 |
+| ChromaDB collections | 3 |
+| Workflow document types | 24 |
+| Master Workflow examples | 25 files |
+
+Verify the knowledge base is loaded by querying ChromaDB directly:
+
+```bash
+curl http://localhost:8001/api/v1/collections
+```
+
+The `softarchitect` collection should be listed after the API container starts.
+
+## Tech Packs
+
+Tech Packs are the modular architectural encyclopedia at the heart of the knowledge base. Each pack covers a technology domain with opinionated, production-tested guidance: recommended patterns, anti-patterns, security considerations, and integration notes.
+
+Packs are organized under `packages/knowledge_base/02-TECH-PACKS/`:
+
+| Domain folder | Contents |
+|---------------|----------|
+| `FRONTEND/` | Flutter Clean Architecture, state management, accessibility |
+| `BACKEND/` | FastAPI patterns, LangChain integration, error handling |
+| `DATA/` | ChromaDB vector storage, SQLite persistence, schema design |
+| `DEVOPS_CLOUD/` | Docker Compose, GitHub Actions, hardware acceleration |
+| `AI_ENGINEERING/` | RAG pipelines, LLM prompt engineering, embedding strategies |
+| `general/` | Cross-cutting concerns: SOLID, Clean Architecture, OWASP |
+
+The `_STANDARD_SCHEMA/` subfolder defines the schema every Tech Pack must follow, ensuring consistent structure for the document loader and vector store.
+
+## Master Workflow examples
+
+`MASTER_WORKFLOW_EXAMPLES/` contains a fully-populated reference document for each of the 24 workflow steps. These are not just stubs — they are realistic, detailed examples that the LLM uses as a quality target when generating your project's documents.
+
+Each example file is paired with the template for the same document type. The `WorkflowInjector` reads both files from disk and wraps them in XML tags before injecting into the prompt:
+
+```python
+injection = (
+    "<template>\n"
+    f"{template_content}\n"
+    "</template>\n\n"
+    "<example>\n"
+    f"{example_content}\n"
+    "</example>\n"
+)
+```
+
+This ensures the LLM can see both the skeleton (template) and a fully-fleshed-out reference (example) before it generates anything.
+
+Example files available:
+
+```text
+ACCESSIBILITY_GUIDE_EXAMPLE.md     AGENTS_EXAMPLE.md
+API_INTERFACE_CONTRACT_EXAMPLE.md  ARCH_DECISION_RECORDS_EXAMPLE.md
+CI_CD_PIPELINE_EXAMPLE.md          COMPLIANCE_MATRIX_EXAMPLE.md
+CONTRIBUTING_EXAMPLE.md            DATA_MODEL_SCHEMA_EXAMPLE.md
+DEPLOYMENT_INFRASTRUCTURE_EXAMPLE.md  DESIGN_SYSTEM_EXAMPLE.md
+DOMAIN_LANGUAGE_EXAMPLE.md         PROJECT_MANIFESTO_EXAMPLE.md
+PROJECT_STRUCTURE_MAP_EXAMPLE.md   README_EXAMPLE.md
+REQUIREMENTS_MASTER_EXAMPLE.md     ROADMAP_PHASES_EXAMPLE.md
+RULES_EXAMPLE.md                   SECURITY_PRIVACY_POLICY_EXAMPLE.md
+SECURITY_THREAT_MODEL_EXAMPLE.md   TECH_STACK_DECISION_EXAMPLE.md
+TESTING_STRATEGY_EXAMPLE.md        UI_WIREFRAMES_FLOW_EXAMPLE.md
+USER_JOURNEY_MAP_EXAMPLE.md        USER_STORIES_MASTER_EXAMPLE.json
+GENERATION_ORDER.md
+```
+
+## Viewing the knowledge base structure
+
+Inspect the raw knowledge base on disk:
+
+```bash
+# List all Tech Pack domains
+ls packages/knowledge_base/02-TECH-PACKS/
+
+# List all workflow templates
+ls packages/knowledge_base/01-TEMPLATES/
+
+# Count all Markdown files
+find packages/knowledge_base -name '*.md' | wc -l
+```
+
+To re-ingest after adding or editing content, restart the API container — it seeds ChromaDB on startup:
+
+```bash
+./scripts/devops/stop_stack.sh
+rm -rf infrastructure/chroma_data/
+./scripts/devops/start_stack.sh
+```
+
+<Note>
+  The `VectorStoreService` uses SHA-256 hashes of `content + source` as document IDs, so running ingestion with the same files is idempotent — no duplicate vectors are created.
+</Note>
+
+## How content is chunked
+
+The `DocumentLoader` applies semantic chunking to each Markdown file before embedding:
+
+1. **Split by H2 headers** — each `##` section becomes a candidate chunk
+2. **Fall back to H3** — if no H2 headers are found
+3. **Fall back to paragraphs** — for sections that exceed 2,000 characters
+4. **Filter by minimum size** — chunks shorter than 500 characters are discarded
+
+Before chunking, `MarkdownCleaner` removes HTML tags, normalises Unicode (NFKC), strips suspicious patterns (`javascript:`, `data:` URIs, `<script>` blocks), and collapses excessive whitespace. This ensures only clean, semantically rich content enters the vector store.

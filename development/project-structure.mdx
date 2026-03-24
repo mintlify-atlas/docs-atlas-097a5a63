@@ -1,0 +1,243 @@
+---
+title: "Project structure"
+description: "Understanding the SoftArchitect AI monorepo layout and architectural layers"
+---
+
+SoftArchitect AI is organized as a monorepo containing a Flutter desktop client, a Python FastAPI backend, a curated RAG knowledge base, and all supporting infrastructure in one repository.
+
+```text
+soft-architect-ai/
+├── context/                    # Agent rules, requirements, and roadmap
+│   ├── 10-BUSINESS_AND_SCOPE/
+│   ├── 20-REQUIREMENTS_AND_SPEC/
+│   ├── 30-ARCHITECTURE/
+│   ├── 40-ROADMAP/
+│   ├── SECURITY_HARDENING_POLICY.en.md
+│   └── SECURITY_HARDENING_POLICY.es.md
+├── doc/                        # Living project documentation (460+ files)
+│   ├── English/
+│   └── Español/
+├── infrastructure/             # Docker Compose configuration
+│   ├── docker-compose.yml
+│   └── .env.example
+├── packages/
+│   └── knowledge_base/         # The RAG brain (29 files, 934 vectors)
+│       ├── 00-META/
+│       ├── 01-TEMPLATES/
+│       ├── 02-TECH-PACKS/
+│       ├── 03-EXAMPLES/
+│       └── MASTER_WORKFLOW_EXAMPLES/
+├── scripts/                    # Automation scripts
+│   ├── devops/
+│   ├── quality/
+│   ├── setup/
+│   ├── testing/
+│   └── workflows/
+├── src/
+│   ├── client/                 # Flutter desktop app
+│   └── server/                 # Python FastAPI backend
+├── tests/                      # Centralized test directory
+│   ├── client/
+│   │   ├── unit/
+│   │   ├── widget/
+│   │   ├── integration/
+│   │   └── e2e/
+│   └── server/
+│       ├── unit/
+│       └── integration/
+├── AGENTS.md                   # ArchitectZero agent identity and rules
+├── pytest.ini                  # Root-level pytest configuration
+└── README.md
+```
+
+## Key directories
+
+<CardGroup cols={2}>
+  <Card title="src/client/" icon="mobile">
+    Flutter desktop app following Clean Architecture. Contains all UI, state management, domain logic, and data layer code.
+  </Card>
+  <Card title="src/server/" icon="server">
+    Python FastAPI backend. Hosts the RAG engine, LangChain orchestration, and all REST + WebSocket endpoints.
+  </Card>
+  <Card title="packages/knowledge_base/" icon="brain">
+    The RAG brain. Tech packs, architectural templates, and curated examples ingested into ChromaDB.
+  </Card>
+  <Card title="tests/" icon="flask-conical">
+    Centralized test directory. All Flutter and Python tests live here, separated from application source code.
+  </Card>
+  <Card title="scripts/" icon="terminal">
+    Automation scripts organized by category: `testing/`, `devops/`, `quality/`, `workflows/`, and `setup/`.
+  </Card>
+  <Card title="context/" icon="file-text">
+    Project context consumed by AI agents. Contains architecture decisions, requirements, security policies, and the roadmap.
+  </Card>
+</CardGroup>
+
+## src/client/ — Flutter Clean Architecture
+
+The Flutter client follows strict Clean Architecture with a clear dependency rule: outer layers depend on inner layers, never the reverse.
+
+```text
+src/client/
+├── lib/
+│   ├── core/           # App-wide utilities, constants, theme, error types
+│   ├── domain/         # Entities and use case interfaces (pure Dart, no dependencies)
+│   ├── features/       # Feature modules (each contains its own domain/data/presentation)
+│   ├── infrastructure/ # Repository implementations, DTOs, data sources
+│   ├── services/       # Cross-cutting services (database, HTTP client)
+│   ├── shared/         # Shared widgets and UI helpers
+│   └── main.dart
+├── assets/
+│   ├── images/
+│   └── html/           # Mermaid renderer for architecture diagrams
+├── linux/
+├── macos/
+├── windows/
+└── pubspec.yaml
+```
+
+**State management:** Riverpod (`flutter_riverpod` + `riverpod_annotation`)
+
+**Key dependencies:** `dio`, `go_router`, `flutter_markdown_plus`, `web_socket_channel`, `sqflite_common_ffi`
+
+## src/server/ — Python FastAPI
+
+The Python backend is organized as a modular monolith. Business logic is kept out of routers and isolated in the service and domain layers.
+
+```text
+src/server/
+├── app/
+│   ├── api/
+│   │   └── v1/         # Versioned REST endpoints
+│   │       ├── chat.py
+│   │       ├── conversations.py
+│   │       ├── health.py
+│   │       ├── knowledge.py
+│   │       ├── projects.py
+│   │       └── websocket/
+│   ├── core/           # App configuration, settings, logging
+│   ├── domain/         # Domain models and interfaces
+│   ├── infrastructure/ # Database adapters, external clients
+│   └── services/       # Application services (RAG, LLM orchestration)
+├── core/               # Shared exceptions, base types
+├── domain/             # Top-level domain contracts
+├── services/           # Top-level service implementations
+│   └── rag/            # ChromaDB vector store, document loader
+├── utils/
+├── Dockerfile
+├── pyproject.toml
+└── requirements.txt
+```
+
+**Framework:** FastAPI 0.115 + Uvicorn
+
+**Key dependencies:** `langchain-core`, `chromadb`, `sentence-transformers`, `pydantic` v2, `sqlalchemy` v2
+
+## packages/knowledge_base/ — RAG brain
+
+The knowledge base is the curated corpus ingested into ChromaDB. It drives the RAG pipeline that grounds every architectural recommendation.
+
+```text
+packages/knowledge_base/
+├── 00-META/             # Knowledge base metadata and index
+├── 01-TEMPLATES/        # Architectural document templates
+├── 02-TECH-PACKS/       # Stack-specific guides (Flutter, Python, Firebase)
+├── 03-EXAMPLES/         # Reference implementations
+└── MASTER_WORKFLOW_EXAMPLES/  # End-to-end workflow examples
+```
+
+After starting the stack, verify the knowledge base is loaded by checking ChromaDB directly:
+
+```bash
+curl http://localhost:8001/api/v1/collections
+```
+
+The `softarchitect` collection should be listed. See the [Knowledge ingestion guide](/guides/knowledge-ingestion) for full details.
+
+## context/ — Project context and rules
+
+The `context/` directory is the source of truth consumed by AI agents (including ArchitectZero). It contains architecture decision records (ADRs), security policies, requirements, and the roadmap.
+
+```text
+context/
+├── 10-BUSINESS_AND_SCOPE/      # Business requirements and scope definitions
+├── 20-REQUIREMENTS_AND_SPEC/   # Functional and non-functional requirements
+├── 30-ARCHITECTURE/
+│   ├── ADR/                    # Architecture Decision Records
+│   └── PROJECT_STRUCTURE_MAP.en.md
+├── 40-ROADMAP/
+│   ├── ROADMAP_PHASES.en.md
+│   └── USER_STORIES_MASTER.en.json
+└── SECURITY_HARDENING_POLICY.en.md
+```
+
+## infrastructure/ — Docker Compose
+
+All infrastructure is defined in a single Docker Compose file. Three services run together:
+
+| Service | Container | Port |
+|---------|-----------|------|
+| FastAPI backend | `sa_api` | `8000` |
+| ChromaDB vector store | `sa_chromadb` | `8001` |
+| Ollama LLM runtime | `sa_ollama` | `11434` |
+
+Start and stop the full stack:
+
+```bash
+# Start all services
+scripts/devops/start_stack.sh
+
+# Stop all services
+scripts/devops/stop_stack.sh
+```
+
+## scripts/ — Automation
+
+Scripts are organized by category. Every script is executable and can be run from the repository root.
+
+```text
+scripts/
+├── devops/
+│   ├── start_stack.sh              # Start Docker services
+│   ├── stop_stack.sh               # Stop Docker services
+│   ├── LAUNCH_FLUTTER_APP_DEV.sh   # Launch Flutter desktop in dev mode
+│   └── LAUNCH_FLUTTER_APP_E2E.sh   # Launch Flutter for E2E testing
+├── quality/
+│   ├── validate-quality-gates.sh   # Quick quality gate check
+│   └── audit-english-compliance.sh
+├── setup/
+├── testing/
+│   ├── run_tests.sh                # Unified test runner
+│   ├── PRE_PUSH_VALIDATION_MASTER.sh  # 8-phase pre-push gate
+│   ├── RUN_COMPLETE_TEST_SUITE.sh  # Full suite wrapper
+│   └── generate_coverage_html.sh   # HTML coverage report
+└── workflows/
+    ├── validate-workflows.sh       # Validate GitHub Actions syntax
+    └── test-workflows-locally.sh   # Run workflows locally with act
+```
+
+## tests/ — Centralized test directory
+
+All tests live under `tests/` rather than alongside source code. This keeps the monorepo clean and makes it straightforward to run the full suite with a single command.
+
+```text
+tests/
+├── client/                 # Flutter tests
+│   ├── unit/               # Pure Dart unit tests
+│   ├── widget/             # Widget rendering tests
+│   ├── integration/        # Feature integration tests
+│   ├── e2e/                # End-to-end flow tests
+│   ├── fixtures/           # Shared test fixtures
+│   └── helpers/            # Test helper utilities
+├── server/                 # Python tests
+│   ├── unit/               # Isolated unit tests
+│   ├── integration/        # Service integration tests
+│   ├── fixtures/
+│   ├── helpers/
+│   └── conftest.py
+└── pubspec.yaml            # Flutter test project (imports src/client via path)
+```
+
+<Note>
+  The `tests/` directory contains its own `pubspec.yaml` that imports `src/client` via a path dependency. Always run Flutter tests from the `tests/` directory, not from `src/client/`.
+</Note>

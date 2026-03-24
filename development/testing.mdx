@@ -1,0 +1,263 @@
+---
+title: "Testing"
+description: "Running the full test suite — 1,286 tests across Flutter and Python"
+---
+
+SoftArchitect AI has **1,286 tests** (893 Flutter + 393 Python) centralized under `tests/`. The project uses TDD (Test-Driven Development) as its methodology for all critical business logic.
+
+## Test structure
+
+```text
+tests/
+├── client/                 # Flutter tests (893 total)
+│   ├── unit/               # Pure Dart unit tests
+│   ├── widget/             # Widget rendering tests
+│   ├── integration/        # Feature integration tests
+│   └── e2e/                # End-to-end flow tests
+└── server/                 # Python tests (393 total)
+    ├── unit/               # Isolated business logic tests
+    └── integration/        # Cross-service integration tests
+```
+
+## Running tests
+
+Use `scripts/testing/run_tests.sh` as the unified entry point for all test execution.
+
+<Tabs>
+  <Tab title="All tests">
+    ```bash
+    scripts/testing/run_tests.sh all
+    ```
+  </Tab>
+  <Tab title="Flutter only">
+    ```bash
+    scripts/testing/run_tests.sh flutter
+    ```
+  </Tab>
+  <Tab title="Python only">
+    ```bash
+    scripts/testing/run_tests.sh python
+    ```
+  </Tab>
+  <Tab title="With coverage">
+    ```bash
+    scripts/testing/run_tests.sh all --coverage
+    ```
+
+    Coverage reports are written to:
+    - Python: `coverage_html/index.html`
+    - Flutter: `coverage/lcov.info`
+  </Tab>
+</Tabs>
+
+<Warning>
+  The coverage gate requires **≥80%** for both Python and Flutter. PRs that drop coverage below this threshold will fail CI.
+</Warning>
+
+## Flutter test categories
+
+Flutter tests run from the `tests/` directory using the `tests/pubspec.yaml` project, which imports `src/client` as a path dependency.
+
+<CardGroup cols={2}>
+  <Card title="Unit tests" icon="atom">
+    Pure Dart tests with no Flutter framework dependencies. Test domain entities, use cases, and utility functions in isolation.
+  </Card>
+  <Card title="Widget tests" icon="layout">
+    Test individual widgets and their rendering. Use `WidgetTester` to pump widgets and verify UI output.
+  </Card>
+  <Card title="Integration tests" icon="cable">
+    Test feature slices end-to-end within the Flutter process. Validate that providers, repositories, and widgets work together.
+  </Card>
+  <Card title="E2E tests" icon="monitor-check">
+    Full application flow tests. Simulate complete user journeys through the guided architectural workflow.
+  </Card>
+</CardGroup>
+
+Run a specific Flutter category:
+
+```bash
+# From the tests/ directory
+cd tests && flutter test client/unit/
+cd tests && flutter test client/widget/
+cd tests && flutter test client/integration/
+cd tests && flutter test client/e2e/
+```
+
+**Testing tools:** `flutter_test`, `mockito`, `integration_test`
+
+## Python test categories
+
+<CardGroup cols={2}>
+  <Card title="Unit tests" icon="atom">
+    Tests for isolated service logic, domain models, and utilities. All external dependencies (ChromaDB, LLMs) are mocked.
+  </Card>
+  <Card title="Integration tests" icon="cable">
+    Tests that verify multiple components working together, including real SQLite interactions and API endpoint behavior.
+  </Card>
+</CardGroup>
+
+Run Python tests directly with pytest:
+
+```bash
+# Unit tests only
+pytest tests/server/unit/ -q
+
+# Integration tests only
+pytest tests/server/integration/ -q
+
+# With coverage
+pytest tests/server/ \
+  --cov=src/server/app \
+  --cov=src/server/services \
+  --cov=src/server/core \
+  --cov-report=term-missing \
+  --cov-fail-under=80
+```
+
+**Testing tools:** `pytest`, `pytest-cov`, `pytest-asyncio`, `httpx`
+
+## pytest configuration
+
+The root `pytest.ini` controls test discovery across the monorepo:
+
+```ini
+[pytest]
+# Fix pytest-asyncio deprecation warning (Python 3.12+)
+asyncio_default_fixture_loop_scope = function
+
+# Only collect tests from these directories
+testpaths = tests
+
+# Python files to collect
+python_files = test_*.py *_test.py
+
+# Directories to ignore during collection
+norecursedirs = src .git .tox dist build *.egg venv node_modules infrastructure packages
+
+markers =
+    slow: marks tests as slow (deselect with '-m "not slow"')
+    integration: marks tests as integration tests
+    unit: marks tests as unit tests
+    asyncio: marks tests as async (pytest-asyncio)
+```
+
+The `pyproject.toml` in `src/server/` extends this with coverage settings:
+
+```toml
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "-ra",
+    "-q",
+    "--strict-markers",
+    "--strict-config",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "--cov-fail-under=80",
+]
+```
+
+## TDD methodology
+
+TDD is mandatory for all critical business logic: parsers, RAG algorithms, and domain use cases.
+
+```text
+🔴 RED    → Write a failing test that describes the desired behavior
+🟢 GREEN  → Write the minimum code needed to make the test pass
+🔵 REFACTOR → Improve the code without changing its behavior
+```
+
+Coverage targets by layer:
+
+| Layer | Target |
+|-------|--------|
+| Domain logic | 100% |
+| Data layer adapters | ≥90% |
+| API endpoints | ≥85% |
+| Exception handling | 100% |
+
+## Test naming convention
+
+All test functions must follow this naming pattern:
+
+```text
+test_{method}_{scenario}_{expected_result}
+```
+
+```python
+# Python examples
+def test_query_with_empty_results_returns_empty_dict(self):
+    ...
+
+def test_ingest_with_duplicate_ids_handles_upsert_idempotently(self):
+    ...
+
+def test_query_when_chromadb_unavailable_raises_connection_error(self):
+    ...
+```
+
+```dart
+// Dart examples
+void test_parseResponse_withValidJson_returnsArchitectureModel() { ... }
+void test_submitForm_whenValidationFails_showsErrorMessage() { ... }
+```
+
+## Mocking external dependencies
+
+External services (ChromaDB, LLMs, file system) must always be mocked in unit tests. Never call real services in unit tests.
+
+```python
+# Python: mock ChromaDB
+from unittest.mock import MagicMock, patch
+
+@patch("services.rag.vector_store.chromadb")
+def test_query_returns_documents(self, mock_chroma):
+    mock_client = MagicMock()
+    mock_client.heartbeat.return_value = 1500
+    mock_chroma.HttpClient.return_value = mock_client
+    # ... test in complete isolation
+```
+
+```dart
+// Dart: mock repository with mockito
+@GenerateMocks([ArchitectureRepository])
+void main() {
+  late MockArchitectureRepository mockRepo;
+
+  setUp(() {
+    mockRepo = MockArchitectureRepository();
+  });
+
+  test('returns Right(model) on success', () async {
+    when(mockRepo.fetchRecommendation(any))
+        .thenAnswer((_) async => Right(fakeModel));
+    // ...
+  });
+}
+```
+
+## Coverage reports
+
+```bash
+# Generate HTML coverage report
+scripts/testing/generate_coverage_html.sh
+
+# Reports are available at:
+# Python: coverage_html/index.html
+# Flutter: coverage/lcov.info
+```
+
+## Pre-push validation
+
+Before every push, run the master validation script. It runs all test suites plus linting, type checking, and security audits as a single gate:
+
+```bash
+./scripts/testing/PRE_PUSH_VALIDATION_MASTER.sh
+```
+
+Exit codes:
+- `0` — All checks passed. Safe to push.
+- `1` — One or more checks failed. Fix and re-run before pushing.
+
+See [CI/CD pipeline](/development/ci-cd) for details on what this script validates.

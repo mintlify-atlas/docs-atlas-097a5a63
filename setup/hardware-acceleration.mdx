@@ -1,0 +1,114 @@
+---
+title: "Hardware acceleration"
+description: "Configure GPU acceleration for faster local LLM inference."
+---
+
+By default, the `sa_ollama` container runs inference on the CPU. Enabling GPU acceleration dramatically reduces response times — typically from 30–120 seconds per response (CPU) to 2–8 seconds (GPU).
+
+## NVIDIA GPU (CUDA)
+
+The `docker-compose.yml` file includes an NVIDIA GPU reservation block that is active by default:
+
+```yaml
+# infrastructure/docker-compose.yml — ollama service
+deploy:
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: 1
+          capabilities: [ gpu ]
+```
+
+To use NVIDIA GPU acceleration:
+
+<Steps>
+  <Step title="Install the NVIDIA Container Toolkit">
+    Follow the [official installation guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) for your operating system.
+
+    ```bash
+    # Verify the toolkit is working
+    docker run --rm --gpus all nvidia/cuda:12.0.0-runtime-base nvidia-smi
+    ```
+  </Step>
+
+  <Step title="Verify GPU is visible inside the container">
+    After starting the stack, confirm the GPU is accessible to Ollama:
+
+    ```bash
+    docker exec sa_ollama nvidia-smi
+    ```
+
+    You should see your GPU listed with its memory and utilisation stats.
+  </Step>
+
+  <Step title="Pull a model and run inference">
+    Ollama automatically uses the GPU when CUDA is available. No additional configuration is required.
+
+    ```bash
+    docker exec sa_ollama ollama pull llama3.2
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  On CPU-only machines, the `deploy.resources.reservations.devices` block in `docker-compose.yml` is **silently ignored** by Docker Compose — no changes to the file are required. If you see errors about GPU devices not found, comment out the entire `deploy` block.
+</Warning>
+
+## Apple Silicon (Metal)
+
+Ollama has native Metal support for Apple M-series chips. When the `sa_ollama` container is run on macOS with an Apple Silicon host, Ollama automatically uses the GPU via Metal — no extra configuration is needed in `docker-compose.yml`.
+
+<Note>
+  Docker Desktop on macOS does not expose the GPU to Linux containers the same way NVIDIA does on Linux. For the best Apple Silicon performance, consider running Ollama natively on the host and pointing `OLLAMA_BASE_URL` in your `.env` to `http://host.docker.internal:11434`.
+</Note>
+
+## CPU-only fallback
+
+If you have no GPU or do not want to use one, comment out the `deploy` block in `infrastructure/docker-compose.yml`:
+
+```yaml
+# infrastructure/docker-compose.yml — ollama service
+# deploy:           # ← Comment this entire block for CPU-only
+#   resources:
+#     reservations:
+#       devices:
+#         - driver: nvidia
+#           count: 1
+#           capabilities: [ gpu ]
+```
+
+Ollama will fall back to CPU inference automatically.
+
+## Memory and CPU configuration
+
+The following `.env` variables control resource allocation for the Ollama container:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_MEMORY_LIMIT` | `2GB` | Maximum RAM the container may use. Increase for larger models. |
+| `OLLAMA_CPU_SHARES` | `1024` | Relative CPU weight. Higher values give Ollama more CPU time. |
+| `CHROMADB_MEMORY_LIMIT` | `512MB` | Memory limit for the ChromaDB container. |
+| `API_MEMORY_LIMIT` | `512MB` | Memory limit for the FastAPI container. |
+
+### Memory limit recommendations by hardware class
+
+| Hardware class | `OLLAMA_MEMORY_LIMIT` | Suitable models |
+|----------------|-----------------------|-----------------|
+| 8 GB RAM (laptop) | `2GB` | `llama3.2`, `phi4-mini` |
+| 16 GB RAM (workstation) | `4GB` | `llama3.2`, `qwen2.5-coder:7b` |
+| 32 GB RAM | `8GB` | Any 7B model, some 13B models |
+| 64 GB RAM+ | `16GB` | 13B–34B models |
+
+## Performance comparison
+
+| Inference mode | Response time (7B model) | Memory usage | Setup complexity |
+|----------------|--------------------------|--------------|------------------|
+| NVIDIA GPU (CUDA) | 2–8 s | GPU VRAM | Medium (requires toolkit) |
+| Apple Silicon (Metal, native) | 3–10 s | Unified memory | Low (automatic) |
+| CPU only (modern desktop) | 30–90 s | RAM | None |
+| CPU only (low-end laptop) | 90–180 s | RAM | None |
+
+<Tip>
+  If GPU acceleration is not available, use a cloud LLM provider (`LLM_PROVIDER=gemini` or `LLM_PROVIDER=groq`) for fast inference without requiring local GPU hardware. Cloud mode requires only 4 GB RAM on the host.
+</Tip>

@@ -1,0 +1,157 @@
+---
+title: "Docker deployment"
+description: "Deploy the full SoftArchitect AI stack with a single Docker Compose command."
+---
+
+SoftArchitect AI ships as three coordinated Docker services defined in `infrastructure/docker-compose.yml`. The recommended way to start everything is the helper script `scripts/devops/start_stack.sh`, which runs pre-flight checks and post-deployment health verification automatically.
+
+## Services overview
+
+| Service | Container | Host port | Description |
+|---------|-----------|-----------|-------------|
+| FastAPI backend | `sa_api` | `8000` | Python API server, RAG engine, LLM orchestration |
+| ChromaDB | `sa_chromadb` | `8001` | Vector store for the knowledge base |
+| Ollama | `sa_ollama` | `11434` | Local LLM runtime (optional for cloud mode) |
+
+All three containers communicate over the internal `sa_network` bridge (`172.25.0.0/16`) and are never directly exposed to the internet.
+
+## Deploying the stack
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/YOUR_USER/soft-architect-ai.git
+    cd soft-architect-ai
+    ```
+  </Step>
+
+  <Step title="Create your .env file">
+    Copy the template from the repository root and edit it to match your setup:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    At minimum, set `LLM_PROVIDER` to your preferred backend (`gemini`, `groq`, or `ollama`) and supply the corresponding API key if using a cloud provider. See [Environment configuration](/setup/environment-configuration) for all available variables.
+  </Step>
+
+  <Step title="Start the stack">
+    Run the helper script from the repository root:
+
+    ```bash
+    ./scripts/devops/start_stack.sh
+    ```
+
+    The script performs the following steps automatically:
+
+    1. Runs `infrastructure/pre_check.py` (pre-flight validation)
+    2. Creates `.env` from `.env.example` if it does not yet exist
+    3. Pulls the latest Docker images: `docker compose --env-file .env -f infrastructure/docker-compose.yml pull`
+    4. Builds and starts containers: `docker compose --env-file .env -f infrastructure/docker-compose.yml up -d --build`
+    5. Waits 5 seconds for services to initialise
+    6. Runs `infrastructure/verify_setup.py` (post-deployment health checks)
+  </Step>
+
+  <Step title="Verify all services are running">
+    Once the script completes, confirm all three containers are up:
+
+    ```bash
+    docker ps
+    # Should show sa_api, sa_chromadb, sa_ollama
+    ```
+
+    You can also run the post-deployment checker directly:
+
+    ```bash
+    python3 infrastructure/verify_setup.py
+    ```
+
+    This checks that each service port responds (8000, 8001, 11434) and reports a pass/fail for each.
+  </Step>
+</Steps>
+
+<Note>
+  On the first run, Docker must pull the base images and build the API container. This typically takes 2–5 minutes depending on your connection speed. Subsequent starts are significantly faster.
+</Note>
+
+## Service endpoints
+
+Once the stack is operational, the following URLs are available on your local machine:
+
+| URL | Service |
+|-----|---------|
+| `http://localhost:8000` | FastAPI backend |
+| `http://localhost:8000/docs` | Interactive API documentation (Swagger UI) |
+| `http://localhost:8001` | ChromaDB REST API |
+| `http://localhost:11434` | Ollama API |
+
+## Viewing logs
+
+```bash
+# Follow logs from all services
+docker compose -f infrastructure/docker-compose.yml logs -f
+
+# Follow logs for a specific service
+docker compose -f infrastructure/docker-compose.yml logs -f api-server
+docker compose -f infrastructure/docker-compose.yml logs -f chromadb
+docker compose -f infrastructure/docker-compose.yml logs -f ollama
+```
+
+## Stopping the stack
+
+```bash
+./scripts/devops/stop_stack.sh
+```
+
+This runs `docker compose --env-file .env -f infrastructure/docker-compose.yml down`, which stops and removes the containers while **preserving all volumes** (ChromaDB index, Ollama model weights).
+
+To perform a full reset that also removes volumes:
+
+```bash
+docker compose -f infrastructure/docker-compose.yml --env-file .env down -v
+```
+
+<Warning>
+  Running `down -v` permanently deletes the ChromaDB vector index and any downloaded Ollama model weights. You will need to re-ingest the knowledge base and re-pull models after a full reset.
+</Warning>
+
+## Data persistence and volumes
+
+| Volume / bind mount | Container path | Purpose |
+|---------------------|----------------|---------|
+| `./data/logs` | `/app/logs` (sa_api) | API server logs |
+| `../src/server/app` | `/app/app` (sa_api) | Live-reload source mount |
+| `../packages/knowledge_base` | `/app/knowledge_base` (sa_api) | RAG knowledge base files |
+| `./chroma_data` | `/data` (sa_chromadb) | ChromaDB persistent index |
+| `ollama_data` (named volume) | `/root/.ollama` (sa_ollama) | Downloaded model weights |
+
+## Health checks
+
+All three services include Docker health checks so that dependent services start in the correct order:
+
+| Container | Health check method | Interval | Retries |
+|-----------|---------------------|----------|---------|
+| `sa_api` | TCP connect to port 8000 | 10 s | 3 |
+| `sa_chromadb` | TCP connect to port 8000 (internal) | 10 s | 3 |
+| `sa_ollama` | TCP connect to port 11434 | 10 s | 3 (30 s start period) |
+
+The `sa_api` container will not start until both `sa_chromadb` and `sa_ollama` report healthy.
+
+## Manual deployment (without the helper script)
+
+If you prefer to run Docker Compose directly:
+
+```bash
+# From the repository root
+docker compose -f infrastructure/docker-compose.yml --env-file .env up -d
+
+# Or from inside the infrastructure/ directory
+cd infrastructure
+docker compose --env-file ../.env up -d
+```
+
+Rebuilding a single service without restarting the others:
+
+```bash
+docker compose -f infrastructure/docker-compose.yml --env-file .env up -d --build api-server
+```

@@ -1,0 +1,149 @@
+---
+title: "LLM providers"
+description: "Choose between local Ollama (privacy mode) and cloud APIs (performance mode)"
+---
+
+SoftArchitect AI supports three LLM providers out of the box. Switch between them with a single environment variable — no code changes required. The choice affects latency, privacy, and the hardware requirements for running the assistant.
+
+## Provider comparison
+
+| Provider | `LLM_PROVIDER` value | Default model | Privacy | Best for |
+|----------|---------------------|---------------|---------|----------|
+| Gemini | `gemini` | `gemini-3.1-flash-lite-preview` | Cloud (data sent to Google) | Daily use, large context windows |
+| Groq | `groq` | `llama-3.3-70b-versatile` | Cloud (data sent to Groq) | Fast inference, modest hardware |
+| Ollama | `ollama` | `llama3.2` | 100% local, data never leaves | Air-gapped environments, sensitive projects |
+
+## Switching providers
+
+Open `.env` and change `LLM_PROVIDER`:
+
+```bash
+# Use Gemini (default)
+LLM_PROVIDER=gemini
+
+# Use Groq for faster cloud inference
+LLM_PROVIDER=groq
+
+# Use Ollama for full local privacy
+LLM_PROVIDER=ollama
+```
+
+Restart the API container after changing the value:
+
+```bash
+docker compose --env-file .env -f infrastructure/docker-compose.yml restart api
+```
+
+The `LLMFactory` reads `LLM_PROVIDER` at startup and instantiates the appropriate client:
+
+```python
+def get_llm_client(mode: str | None = None) -> BaseLLMClient:
+    selected_mode = (mode or os.getenv("LLM_PROVIDER", "ollama")).lower()
+
+    if selected_mode == "ollama":
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://sa_ollama:11434")
+        model = os.getenv("OLLAMA_MODEL", "llama3.2")
+        return OllamaClient(base_url=base_url, model=model, timeout=timeout)
+
+    if selected_mode == "groq":
+        api_key = os.getenv("GROQ_API_KEY", "")
+        return GroqClient(api_key=api_key)
+
+    if selected_mode == "gemini":
+        api_key = os.getenv("GEMINI_API_KEY", "")
+        model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        return GeminiClient(api_key=api_key, model=model)
+```
+
+All three clients implement the same `BaseLLMClient` interface — `generate()` for synchronous responses and `stream_generate()` for token-by-token streaming — so the rest of the RAG pipeline is provider-agnostic.
+
+## Gemini
+
+Gemini is the default provider. It offers a large context window suitable for complex multi-document prompts with the full RAG context injected.
+
+```bash
+# .env
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.1-flash-lite-preview
+```
+
+<Note>
+  Obtain a Gemini API key from [Google AI Studio](https://aistudio.google.com/). The free tier supports the context sizes used by SoftArchitect AI's default configuration.
+</Note>
+
+## Groq
+
+Groq provides ultra-fast cloud inference for large open-weight models. It is a good choice when you want near-instant responses and are comfortable with data leaving your machine.
+
+```bash
+# .env
+LLM_PROVIDER=groq
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+```
+
+## Ollama
+
+Ollama runs LLMs entirely on your local hardware. No API key is required and no data leaves your network. This is the recommended mode for projects with sensitive architecture decisions or strict data sovereignty requirements.
+
+```bash
+# .env
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=llama3.2
+OLLAMA_BASE_URL=http://ollama:11434
+```
+
+Recommended models by use case:
+
+| Model | RAM required | Use case |
+|-------|-------------|----------|
+| `llama3.2` | ~4 GB | General architecture guidance (default) |
+| `qwen2.5-coder:7b` | ~6 GB | Code-heavy architecture and API design |
+| `phi4-mini` | ~3 GB | Low-memory laptops, faster responses |
+
+<Warning>
+  Local models typically have an 8K token context window. If you use Ollama, reduce the prompt size limits to prevent out-of-memory errors:
+
+  ```bash
+  LLM_MAX_PROMPT_CHARS=30000
+  RAG_MAX_CHUNKS=2
+  ```
+</Warning>
+
+## Hardware optimization
+
+Two environment variables let you tune the RAG context budget to match your hardware and model. The values below come from the `.env.example` defaults:
+
+| Variable | Default | Ollama (8K model) | Gemini / Groq |
+|----------|---------|-------------------|---------------|
+| `LLM_MAX_PROMPT_CHARS` | `200000` | `30000` | `200000` |
+| `RAG_MAX_CHUNKS` | `3` | `2` | `3`–`5` |
+
+`LLM_MAX_PROMPT_CHARS` is a hard cap on the fully-assembled prompt (approximately tokens × 4). When the prompt exceeds this value, the orchestrator truncates from the end — architectural context injected earlier in the prompt is always preserved.
+
+`RAG_MAX_CHUNKS` controls how many per-project semantic search results are injected. Increasing it to `5` gives the LLM more project context but consumes more of the context window.
+
+```bash
+# .env — Developer laptop with 8 GB RAM, Ollama llama3.2
+LLM_MAX_PROMPT_CHARS=30000
+RAG_MAX_CHUNKS=2
+
+# .env — Workstation or CI server using cloud APIs
+LLM_MAX_PROMPT_CHARS=200000
+RAG_MAX_CHUNKS=5
+```
+
+## Docker resource limits
+
+The Ollama container has configurable memory and CPU limits to prevent it from starving other services:
+
+```bash
+# .env
+OLLAMA_MEMORY_LIMIT=2GB
+OLLAMA_CPU_SHARES=1024
+CHROMADB_MEMORY_LIMIT=512MB
+API_MEMORY_LIMIT=512MB
+```
+
+Increase `OLLAMA_MEMORY_LIMIT` to `4GB` or more when running 7B+ parameter models locally.

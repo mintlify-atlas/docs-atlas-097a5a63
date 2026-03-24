@@ -1,97 +1,94 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "SoftArchitect AI"
+description: "Your Virtual Senior Architect, On-Demand. Democratizing elite software engineering through contextual AI."
 ---
 
-## Setting up
-
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get SoftArchitect AI running locally in under 5 minutes with Docker Compose.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Architecture Overview" icon="building-columns" href="/architecture">
+    Understand the Clean Architecture + Hexagonal design behind the platform.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="RAG Engine" icon="brain" href="/features/rag-engine">
+    See how Retrieval-Augmented Generation powers architecture recommendations.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore the FastAPI backend endpoints for chat, projects, and knowledge.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What is SoftArchitect AI?
 
-Everything you need to create world-class documentation.
+SoftArchitect AI is not another "chat with code" tool. It's your **Shadow Software Architect** — an AI-assisted work environment that guides you through the most critical and overlooked phase of software development: **project conception**.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+Through a **Guided Architectural Workflow** (Context → Requirements → Architecture → UX/UI → Planning), it acts as a preventive quality gate — ensuring your application design complies with SOLID principles, Clean Architecture, and OWASP security guidelines *before you write the first line of code*.
 
-## Need inspiration?
+<CardGroup cols={3}>
+  <Card title="Local-First Privacy" icon="shield-halved">
+    Run LLMs entirely on your machine with Ollama. Your data never leaves your network.
+  </Card>
+  <Card title="RAG Knowledge Base" icon="database">
+    29 curated architectural documents, 934 vector embeddings powering every recommendation.
+  </Card>
+  <Card title="Tech Packs" icon="layer-group">
+    Stack-specific architecture rules for Flutter, Python, Firebase, and more.
+  </Card>
+  <Card title="Streaming Chat" icon="bolt">
+    Real-time streaming responses with optimistic UI and WebSocket support.
+  </Card>
+  <Card title="Context Factory" icon="robot">
+    Auto-generates AGENTS.md and RULES.md so your AI copilot works better.
+  </Card>
+  <Card title="Docker Deployment" icon="docker">
+    One command brings up the full stack: API, ChromaDB, and Ollama in under 2 minutes.
+  </Card>
+</CardGroup>
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+## The architectural workflow
+
+SoftArchitect AI guides you through five sequential phases, each building on the last:
+
+<Steps>
+  <Step title="Context gathering">
+    Define your project context: team size, experience level, business domain, and constraints. The AI interviews you to build a complete picture.
+  </Step>
+  <Step title="Requirements analysis">
+    Transform business needs into technical requirements. The RAG engine retrieves relevant architectural patterns from the knowledge base.
+  </Step>
+  <Step title="Architecture design">
+    Get concrete architecture recommendations — Clean Architecture layers, hexagonal ports, SOLID compliance checks, and OWASP security gates.
+  </Step>
+  <Step title="UX/UI planning">
+    Plan the user experience with wireframe descriptions and component hierarchies aligned to your chosen stack.
+  </Step>
+  <Step title="Development planning">
+    Generate a prioritized backlog with user stories, acceptance criteria, and technical tasks ready for your sprint planning tool.
+  </Step>
+</Steps>
+
+## Tech stack
+
+| Layer | Technology |
+|-------|-----------|
+| **Frontend** | Flutter Desktop (Linux / Windows / macOS) |
+| **Backend** | Python 3.12 · FastAPI · LangChain |
+| **AI Engine** | Ollama (local) · Groq · Gemini (cloud) |
+| **Vector Store** | ChromaDB |
+| **Infrastructure** | Docker Compose |
+| **Testing** | pytest · flutter\_test · 1,286 tests · ≥80% coverage |
+
+## Project status
+
+<Note>
+  SoftArchitect AI is currently in **Pre-Alpha**. Core features are functional with 1,286 passing tests and ≥80% coverage. The project is licensed under GPL-3.0.
+</Note>
+
+| Metric | Value |
+|--------|-------|
+| Tests | 893 Flutter + 393 Python |
+| Test Coverage | ≥80% |
+| Knowledge Base | 29 files · 934 vectors |
+| Architecture | Clean + Hexagonal |
+| Security Gates | 16/16 passing |
+| Deployment | &lt;2 min Docker |

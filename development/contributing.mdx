@@ -1,0 +1,297 @@
+---
+title: "Contributing"
+description: "How to contribute to SoftArchitect AI — from setting up your dev environment to submitting a PR"
+---
+
+Contributions are welcome. This guide covers everything from forking the repository to passing the pre-PR checklist.
+
+## Prerequisites
+
+- Docker 20.10+ and Docker Compose 2.0+
+- Python 3.12.3
+- Flutter 3.38.0+ (Dart SDK ≥3.10.8)
+- Git
+
+## Setting up your development environment
+
+<Steps>
+  <Step title="Fork and clone">
+    Fork the repository on GitHub, then clone your fork:
+
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/soft-architect-ai.git
+    cd soft-architect-ai
+    ```
+  </Step>
+
+  <Step title="Create a Python virtual environment">
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate  # Windows: venv\Scripts\activate
+    pip install -r src/server/requirements.txt
+    ```
+  </Step>
+
+  <Step title="Install Flutter dependencies">
+    ```bash
+    cd src/client && flutter pub get
+    cd ../../tests && flutter pub get
+    ```
+  </Step>
+
+  <Step title="Configure environment variables">
+    ```bash
+    cp .env.example .env
+    # Edit .env — choose LLM_PROVIDER=local or LLM_PROVIDER=cloud
+    ```
+  </Step>
+
+  <Step title="Start the Docker stack">
+    ```bash
+    scripts/devops/start_stack.sh
+    # API:      http://localhost:8000
+    # API docs: http://localhost:8000/docs
+    # ChromaDB: http://localhost:8001
+    # Ollama:   http://localhost:11434
+    ```
+  </Step>
+
+  <Step title="Set up pre-commit hooks">
+    ```bash
+    chmod +x .git/hooks/pre-commit
+    # Or use the pre-commit framework:
+    pip install pre-commit && pre-commit install
+    ```
+  </Step>
+</Steps>
+
+## Gitflow branching model
+
+The project follows Gitflow strictly. Never commit directly to `main` or `develop`.
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Production-ready releases only |
+| `develop` | Integration branch for completed features |
+| `feature/*` | New features and non-emergency changes |
+| `fix/*` | Bug fixes |
+| `security/*` | Security patches |
+
+```bash
+# Create a feature branch from develop
+git checkout develop
+git pull origin develop
+git checkout -b feature/my-feature
+
+# When ready, open a PR targeting develop
+git push origin feature/my-feature
+```
+
+## Development workflow
+
+Follow this sequence for every change:
+
+<Steps>
+  <Step title="Write code and tests">
+    Follow TDD for business logic. Write a failing test first, then implement the minimum code to pass it.
+
+    ```bash
+    # Run tests as you work
+    scripts/testing/run_tests.sh python
+    scripts/testing/run_tests.sh flutter
+    ```
+  </Step>
+
+  <Step title="Format your code">
+    ```bash
+    # Python
+    black src/server/ --line-length 100
+    ruff check --fix src/server/
+
+    # Dart
+    dart format src/client/
+    ```
+  </Step>
+
+  <Step title="Run type checking">
+    ```bash
+    # Python
+    python -m pyright src/server/services src/server/core
+
+    # Dart
+    dart analyze src/client/
+    ```
+  </Step>
+
+  <Step title="Run the full validation suite">
+    ```bash
+    ./scripts/testing/PRE_PUSH_VALIDATION_MASTER.sh
+    ```
+
+    This script must exit with code `0` before you push. It takes approximately 4–5 minutes.
+  </Step>
+
+  <Step title="Commit with a conventional message">
+    ```bash
+    git add -A
+    git commit -m "feat: add RAG chunk size configuration endpoint"
+    ```
+
+    Valid prefixes: `feat:`, `fix:`, `docs:`, `style:`, `security:`
+  </Step>
+
+  <Step title="Push and open a PR">
+    ```bash
+    git push origin feature/my-feature
+    ```
+
+    Open a pull request targeting the `develop` branch. GitHub Actions will run the CI pipeline automatically.
+  </Step>
+</Steps>
+
+## Code style rules
+
+### Python
+
+- **Formatter:** Black, line length 100
+- **Linter:** Ruff with rule sets `E`, `W`, `F`, `I`, `C90`, `N`, `UP`, `B`, `S`
+- **Types:** Pyright strict mode — every function must have a return type annotation
+- **Hashing:** SHA-256 only. Never MD5 or SHA-1.
+- **Imports:** Typed imports only. Annotate external library types explicitly.
+
+```python
+# ✅ Correct: annotated return type
+def query(self, text: str) -> dict[str, Any]:
+    ...
+
+# ✅ Correct: SHA-256 for IDs
+hashlib.sha256(raw_id.encode("utf-8")).hexdigest()
+
+# ❌ Wrong: missing return type annotation
+def query(self, text: str):
+    ...
+
+# ❌ Wrong: MD5 (flagged by Ruff S324)
+hashlib.md5(raw_id.encode("utf-8")).hexdigest()
+```
+
+### Dart / Flutter
+
+- **Linter:** `flutter_lints` (strict rules in `analysis_options.yaml`)
+- **Color opacity:** Always use `withValues(alpha: x.x)`, never the deprecated `withOpacity()`
+- **Error handling:** Use `Either<Failure, Success>` for all domain-layer error propagation
+- **Code generation:** Run `dart run build_runner build` after modifying annotated files
+
+```dart
+// ✅ Correct: withValues(alpha:)
+color.withValues(alpha: 0.5)
+
+// ❌ Wrong: withOpacity() is deprecated
+color.withOpacity(0.5)
+
+// ✅ Correct: Either for error handling
+Future<Either<Failure, ArchitectureModel>> getRecommendation(
+  String projectId,
+) async {
+  try {
+    final result = await _repository.fetch(projectId);
+    return Right(result);
+  } on NetworkFailure catch (e) {
+    return Left(e);
+  }
+}
+```
+
+### Security rules (both languages)
+
+<Warning>
+  These rules are non-negotiable. Violations will fail code review and CI.
+</Warning>
+
+- **Never expose stack traces to users.** Log internally; return controlled error responses.
+- **Never hardcode credentials.** Use `.env` files and runtime injection only.
+- **Never commit `.env` files.** They are listed in `.gitignore`.
+- **Define custom exceptions** in the domain layer and re-raise them from service layers.
+
+```python
+# ❌ Wrong: exposes internals to the user
+except Exception as e:
+    return {"error": str(e)}
+
+# ✅ Correct: controlled error response
+except DatabaseReadError as e:
+    logger.error(f"Query failed: {e.reason}", extra={"error_code": e.code})
+    return {"error": e.to_dict()}
+```
+
+## Pre-PR checklist
+
+Copy this checklist into your pull request description before requesting a review:
+
+```markdown
+### Code quality
+- [ ] Black formatted: `black --check src/server/`
+- [ ] Ruff clean: `ruff check src/server/`
+- [ ] Pyright 0 errors: `pyright src/server/services`
+- [ ] Tests pass: `pytest tests/ --cov-fail-under=80 -q`
+
+### Security and cryptography
+- [ ] No MD5 or SHA-1 usage
+- [ ] No sensitive data in logs
+- [ ] No hardcoded credentials or secrets
+- [ ] Custom exceptions used for error handling
+
+### Type safety
+- [ ] All functions have return type annotations
+- [ ] All Optional values checked explicitly
+- [ ] No broad `Exception` catches (use specific types)
+
+### Testing
+- [ ] Unit tests written for all new business logic
+- [ ] Edge cases covered (empty inputs, None, error paths)
+- [ ] External dependencies mocked in unit tests
+- [ ] Coverage ≥80% verified locally
+
+### Documentation
+- [ ] Docstrings added to all public functions
+- [ ] Architecture decisions documented in code comments
+- [ ] New doc pages added to both `doc/English/` and `doc/Español/`
+
+### Git hygiene
+- [ ] `PRE_PUSH_VALIDATION_MASTER.sh` passed (exit 0)
+- [ ] Commit messages follow `feat:|fix:|docs:|style:|security:` convention
+- [ ] No `.env` files committed
+- [ ] No hardcoded paths or credentials in source code
+```
+
+## Documentation standards
+
+All project documentation lives in `doc/` and follows a bilingual mirror structure:
+
+```text
+doc/
+├── English/    # English documentation
+└── Español/    # Spanish documentation (identical structure)
+```
+
+<Note>
+  Every document added to `doc/English/` must have a corresponding translation in `doc/Español/` with the same filename and directory path. The language is determined by the parent directory, not by a file extension.
+</Note>
+
+File naming rules:
+- Use `UPPERCASE_SNAKE_CASE` for document filenames
+- Never use `.en.md` or `.es.md` extensions (these are the old system)
+- Place files in the correct category subfolder (`01-PROJECT_REPORT/`, `02-SETUP_DEV/`, etc.)
+
+Run the sync script after adding documents to keep the mirror consistent:
+
+```bash
+python3 doc/scripts/sync_mirror_bilingual.py
+
+# Verify both directories have the same structure
+diff -r doc/English/ doc/Español/ --brief | grep -v "Binary"
+```
+
+## License
+
+SoftArchitect AI is released under the **GPL-3.0** license. By contributing, you agree that your contributions will be licensed under GPL-3.0.

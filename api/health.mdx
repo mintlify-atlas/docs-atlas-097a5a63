@@ -1,0 +1,134 @@
+---
+title: "Health check"
+description: "Service liveness endpoints for Docker, Kubernetes, and client connection verification."
+---
+
+Health endpoints let container orchestrators, load balancers, and client applications verify that the SoftArchitect AI backend is running and responsive.
+
+---
+
+## GET /
+
+API root endpoint. Returns general information about the running service.
+
+### Response
+
+```json
+{
+  "name": "SoftArchitect AI",
+  "version": "0.1.0",
+  "status": "running",
+  "docs": "/docs",
+  "api_v1": "/api/v1"
+}
+```
+
+<ResponseField name="name" type="string">
+  Application name. Configurable via the `APP_NAME` environment variable.
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  Semantic version string. Configurable via `APP_VERSION`.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Always `"running"` when the server is up and accepting requests.
+</ResponseField>
+
+<ResponseField name="docs" type="string">
+  Path to the interactive Swagger UI documentation.
+</ResponseField>
+
+<ResponseField name="api_v1" type="string">
+  URL prefix for all v1 API endpoints.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash curl
+curl http://localhost:8000/
+```
+</CodeGroup>
+
+```json
+{
+  "name": "SoftArchitect AI",
+  "version": "0.1.0",
+  "status": "running",
+  "docs": "/docs",
+  "api_v1": "/api/v1"
+}
+```
+
+---
+
+## GET /api/v1/system/health
+
+Lightweight liveness probe. Suitable for frequent polling by Docker `HEALTHCHECK`, Kubernetes liveness probes, and load balancers.
+
+### Response
+
+Returns `200 OK` on success.
+
+```json
+{
+  "status": "OK",
+  "message": "SoftArchitect AI backend is running",
+  "version": "0.1.0"
+}
+```
+
+<ResponseField name="status" type="string">
+  Health status indicator. Values: `"OK"`, `"DEGRADED"`, `"ERROR"`.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable health status message.
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  Application version string.
+</ResponseField>
+
+### HTTP status codes
+
+| Code | Meaning |
+|---|---|
+| `200 OK` | Service is healthy and running |
+
+### Example
+
+<CodeGroup>
+```bash curl
+curl http://localhost:8000/api/v1/system/health
+```
+</CodeGroup>
+
+```json
+{
+  "status": "OK",
+  "message": "SoftArchitect AI backend is running",
+  "version": "0.1.0"
+}
+```
+
+### Docker HEALTHCHECK
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:8000/api/v1/system/health || exit 1
+```
+
+### Kubernetes liveness probe
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /api/v1/system/health
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+```

@@ -1,80 +1,140 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get SoftArchitect AI running locally in under 5 minutes using Docker Compose."
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
+- [Docker](https://docs.docker.com/get-docker/) 20.10 or later
+- [Docker Compose](https://docs.docker.com/compose/install/) 2.0 or later
+- Git
 
-### Step 1: Set up your local environment
+<Tip>
+  **Choosing your LLM provider:** Set `LLM_PROVIDER=ollama` in your `.env` for fully offline, private inference. Set `LLM_PROVIDER=gemini` or `LLM_PROVIDER=groq` to use a cloud API for faster responses on modest hardware. You can switch at any time by editing `.env` and restarting the stack.
+</Tip>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+## Installation
 
-### Step 2: Deploy your changes
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/YOUR_USER/soft-architect-ai.git
+    cd soft-architect-ai
+    ```
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+  <Step title="Configure your environment">
+    Copy the provided template and open it in your editor:
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    ```bash
+    cp .env.example .env
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    The key variables to set before starting:
 
-### Step 3: Go live
+    ```bash
+    # Choose your LLM provider: gemini | groq | ollama
+    LLM_PROVIDER=gemini
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    # For Gemini Cloud (default)
+    GEMINI_API_KEY=your_gemini_api_key_here
+
+    # For Groq Cloud
+    # GROQ_API_KEY=your_groq_api_key_here
+
+    # For local Ollama — no API key required
+    # OLLAMA_MODEL=llama3.2
+    ```
+
+    <Note>
+      Never commit your `.env` file. It is listed in `.gitignore` by default. Only `.env.example` is tracked in version control.
+    </Note>
+  </Step>
+
+  <Step title="Start all services">
+    The `start_stack.sh` script runs pre-flight checks, pulls images, and starts all containers:
+
+    ```bash
+    ./scripts/devops/start_stack.sh
+    ```
+
+    Alternatively, start services directly with Docker Compose:
+
+    ```bash
+    docker compose --env-file .env -f infrastructure/docker-compose.yml up -d --build
+    ```
+
+    When the stack is ready, the script prints the following URLs:
+
+    ```text
+    - API:      http://localhost:8000
+    - API docs: http://localhost:8000/docs
+    - ChromaDB: http://localhost:8001
+    - Ollama:   http://localhost:11434
+    ```
+
+    Verify the running containers:
+
+    ```bash
+    docker ps
+    ```
+
+    You should see three containers: `sa_api`, `sa_chromadb`, and `sa_ollama`.
+  </Step>
+
+  <Step title="Ingest the knowledge base">
+    Before the first conversation, load the curated technical knowledge base into ChromaDB. The `start_stack.sh` script handles this automatically on first run. You can verify ChromaDB is populated by checking its HTTP API directly:
+
+    ```bash
+    curl http://localhost:8001/api/v1/collections
+    ```
+
+    You should see the `softarchitect` collection listed. If the collection is empty, restart the stack — the API container seeds the vector store on startup.
+
+    <Note>
+      The dedicated `/api/v1/knowledge/ingest` and `/api/v1/knowledge/status` endpoints are planned for Phase 2. Knowledge base ingestion currently happens automatically during container initialization.
+    </Note>
+  </Step>
+
+  <Step title="Open the Flutter desktop app">
+    Launch the Flutter frontend in development mode:
+
+    ```bash
+    ./scripts/devops/LAUNCH_FLUTTER_APP_DEV.sh
+    ```
+
+    The app connects to the API at `http://localhost:8000` automatically. You are now ready to start your first guided architectural session.
+  </Step>
+</Steps>
+
+## Tuning for your hardware
+
+Two variables control how much context the RAG pipeline sends to the LLM. Adjust them in `.env` to match your model's context window and prevent out-of-memory errors:
+
+| Variable | Default | Ollama (8K context) | Gemini / Groq |
+|---|---|---|---|
+| `LLM_MAX_PROMPT_CHARS` | `200000` | `30000` | `200000` |
+| `RAG_MAX_CHUNKS` | `3` | `2` | `5` |
+
+```bash
+# .env — Local Ollama model with 8K context window
+LLM_MAX_PROMPT_CHARS=30000
+RAG_MAX_CHUNKS=2
+
+# .env — Cloud API (Gemini or Groq) — maximum precision
+LLM_MAX_PROMPT_CHARS=200000
+RAG_MAX_CHUNKS=5
+```
+
+The pipeline truncates the prompt rather than silently dropping RAG context, so architectural recommendations always remain grounded in the knowledge base.
+
+## Stopping the stack
+
+```bash
+./scripts/devops/stop_stack.sh
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+- Read the [Architecture](/architecture) page to understand how the system is structured.
+- Browse the interactive API reference at `http://localhost:8000/docs` once the stack is running.

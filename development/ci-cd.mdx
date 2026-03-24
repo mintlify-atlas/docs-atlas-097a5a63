@@ -1,0 +1,274 @@
+---
+title: "CI/CD pipeline"
+description: "Automated testing, formatting, and quality gates using GitHub Actions"
+---
+
+SoftArchitect AI uses a single GitHub Actions workflow (`ci-master.yaml`) that implements smart monorepo change detection — only the relevant pipeline jobs run based on which files were modified in a given push or pull request.
+
+## Workflow files
+
+| File | Purpose |
+|------|---------|
+| `.github/workflows/ci-master.yaml` | Monorepo master pipeline (backend, frontend, Docker) |
+| `.github/workflows/deploy_pages.yml` | GitHub Pages deployment for the presentation site |
+
+## Monorepo change detection
+
+The pipeline uses `dorny/paths-filter` to detect which parts of the repo changed. Only the affected jobs run:
+
+```yaml
+filters: |
+  backend:
+    - 'src/server/**'
+    - 'requirements.txt'
+    - 'pyrightconfig.json'
+    - '.pre-commit-config.yaml'
+  frontend:
+    - 'src/client/**'
+    - 'pubspec.yaml'
+    - 'analysis_options.yaml'
+  docker:
+    - 'infrastructure/**'
+    - 'src/server/Dockerfile'
+  tests:
+    - 'tests/**'
+```
+
+This means a Flutter-only change does not trigger the Python pipeline, and vice versa.
+
+## Pipeline jobs
+
+<Tabs>
+  <Tab title="Backend CI">
+    Triggered when `src/server/**` or related files change.
+
+    ```yaml
+    # 1. Type checking
+    - name: Type Check (Pyright)
+      run: cd src/server && python -m pyright app/ services/ core/
+
+    # 2. Linting
+    - name: Linter (Ruff)
+      run: ruff check src/server/ --output-format=github
+
+    # 3. Formatting
+    - name: Format Check (Black)
+      run: black --check src/server/ --diff
+
+    # 4. Security audit
+    - name: Security Audit (Bandit)
+      run: bandit -r src/server/app src/server/services src/server/core -f txt
+
+    # 5. Unit tests + coverage (PRs and develop branch)
+    - name: Unit Tests + Coverage
+      run: |
+        pytest tests/server/unit \
+          --cov=src/server/app --cov=src/server/services --cov=src/server/core \
+          --cov-report=html:coverage-report \
+          --cov-report=xml:coverage.xml \
+          --cov-report=term-missing \
+          --cov-fail-under=80
+
+    # 6. Integration tests (PRs and develop branch)
+    - name: Integration Tests
+      run: pytest tests/server/integration -v --tb=short -m "not slow"
+    ```
+
+    **What fails the pipeline:**
+    - Any Pyright type error
+    - Any Ruff linting violation
+    - Black formatting needed
+    - Test coverage below 80%
+    - Any failing unit test
+
+    Bandit security findings are reported as warnings and do not block merges by default.
+  </Tab>
+  <Tab title="Flutter CI">
+    Triggered when `src/client/**` or related files change.
+
+    ```yaml
+    # 1. Get dependencies
+    - name: Get Dependencies
+      run: |
+        cd src/client && flutter pub get
+        cd ../../tests && flutter pub get
+
+    # 2. Static analysis
+    - name: Analyze
+      run: cd src/client && flutter analyze --no-pub
+
+    # 3. Format check
+    - name: Format Check
+      run: cd src/client && dart format --output=none --set-exit-if-changed .
+
+    # 4. Tests + coverage (PRs and develop branch)
+    - name: Tests + Coverage
+      run: |
+        cd tests && flutter test client/ \
+          --coverage \
+          --no-pub \
+          -v
+    ```
+
+    **What fails the pipeline:**
+    - `flutter analyze` errors or warnings
+    - Dart formatting violations
+    - Any failing Flutter test
+  </Tab>
+  <Tab title="Docker validation">
+    Triggered when `infrastructure/**` or `src/server/Dockerfile` change, and only on PRs or the `develop` branch.
+
+    ```yaml
+    # 1. Validate compose config
+    - name: Validate docker-compose
+      run: |
+        cp .env.example .env
+        docker compose --env-file .env -f infrastructure/docker-compose.yml config
+
+    # 2. Build check
+    - name: Build-check Dockerfile
+      run: cd src/server && docker buildx build --check .
+    ```
+  </Tab>
+</Tabs>
+
+## Code quality standards
+
+### Python
+
+| Tool | Rule | Setting |
+|------|------|---------|
+| Black | Line length | 100 chars (AGENTS.md) / 88 chars (pyproject.toml) |
+| Ruff | Selected rule sets | `E`, `W`, `F`, `I`, `C90`, `N`, `UP`, `B`, `S` |
+| Ruff | Security codes | `S`-codes enforced (including `S324` — no MD5) |
+| Pyright | Type checking mode | Strict (zero errors allowed) |
+| Bandit | Security audit | Recursive scan of `app/`, `services/`, `core/` |
+
+<Warning>
+  Never use MD5 or SHA-1 for hashing. Use **SHA-256** (NIST approved) for all deterministic IDs and integrity checks. Ruff rule `S324` will flag MD5 usage.
+</Warning>
+
+### Dart / Flutter
+
+| Tool | Rule |
+|------|------|
+| `flutter analyze` | `flutter_lints` strict rules |
+| `dart format` | Standard Dart formatter, exit on changes |
+
+<Note>
+  Never use the deprecated `withOpacity()` method. Use `withValues(alpha: x.x)` instead. The linter will flag deprecated usages.
+</Note>
+
+## Cryptographic standards
+
+```python
+# ❌ Never use MD5 (Ruff S324)
+hashlib.md5(raw_id.encode("utf-8")).hexdigest()
+
+# ✅ Use SHA-256
+hashlib.sha256(raw_id.encode("utf-8")).hexdigest()
+```
+
+| Purpose | Algorithm | Min length |
+|---------|-----------|------------|
+| Deterministic ID | SHA-256 | 64 chars |
+| File integrity | SHA-256 | 64 chars |
+| Password hashing | Argon2 | N/A |
+| HMAC signing | SHA-256 | 64 chars |
+
+## Commit message convention
+
+All commit messages must follow this prefix convention:
+
+```text
+feat:     New feature
+fix:      Bug fix
+docs:     Documentation change
+style:    Formatting, no logic change
+security: Security-related change
+```
+
+Examples:
+
+```bash
+git commit -m "feat: add streaming response to chat endpoint"
+git commit -m "fix: handle None return from ChromaDB query"
+git commit -m "security: replace MD5 with SHA-256 in document ID generation"
+```
+
+## Pre-commit hooks
+
+Set up the pre-commit hook to validate locally before every commit:
+
+```bash
+# One-time setup
+chmod +x .git/hooks/pre-commit
+```
+
+The hook runs:
+1. Black formatting check
+2. Ruff linting
+3. Trailing whitespace removal
+4. Pyright type checking
+5. Pytest with ≥80% coverage
+
+```bash
+# Alternatively, use pre-commit framework (configured in src/server/.pre-commit-config.yaml)
+pip install pre-commit
+pre-commit install
+```
+
+## The PRE_PUSH_VALIDATION_MASTER script
+
+The master validation script is the definitive local gate before pushing. It replicates all CI checks in 8 sequential phases:
+
+<Steps>
+  <Step title="Phase 1: Code formatting">
+    Black check on `src/server/`. Dart format check on `src/client/`.
+  </Step>
+  <Step title="Phase 2: Linting and code quality">
+    Ruff linting, Ruff security S-codes, and `dart analyze`.
+  </Step>
+  <Step title="Phase 3: Type checking">
+    Pyright on `src/server/services` and `src/server/core`. Dart type checking with `--fatal-infos`.
+  </Step>
+  <Step title="Phase 4: Unit tests">
+    Python unit tests (`tests/server/unit/`). Flutter unit and widget tests.
+  </Step>
+  <Step title="Phase 5: Integration tests">
+    Python integration tests. Flutter integration and E2E tests.
+  </Step>
+  <Step title="Phase 6: Security audit">
+    Bandit recursive scan. SQL injection pattern detection.
+  </Step>
+  <Step title="Phase 7: Code coverage">
+    Python coverage ≥80% with HTML report to `coverage_html/`. Flutter coverage ≥80% via lcov.
+  </Step>
+  <Step title="Phase 8: Build validation">
+    Docker Compose configuration check. Python dependency integrity check.
+  </Step>
+</Steps>
+
+```bash
+./scripts/testing/PRE_PUSH_VALIDATION_MASTER.sh
+# Exit 0 = ✅ SAFE TO PUSH
+# Exit 1 = ❌ DO NOT PUSH — fix issues and re-run
+```
+
+<Tip>
+  The script takes approximately 4–5 minutes to complete. Run it once before opening a PR rather than relying solely on CI feedback.
+</Tip>
+
+## Final status check
+
+The `status-check` job runs after all other jobs and fails the pipeline if either `backend` or `frontend` jobs failed:
+
+```yaml
+- name: Fail if critical checks failed
+  if: |
+    needs.backend.result == 'failure' ||
+    needs.frontend.result == 'failure'
+  run: exit 1
+```
+
+The pipeline runs on push and pull requests to `main` and `develop`, and supports manual dispatch via `workflow_dispatch`.

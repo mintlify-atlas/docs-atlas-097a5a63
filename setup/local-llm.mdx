@@ -1,0 +1,112 @@
+---
+title: "Local LLM setup"
+description: "Run AI inference entirely on your hardware with Ollama — your data never leaves your machine."
+---
+
+SoftArchitect AI is built local-first. When you set `LLM_PROVIDER=ollama`, every prompt and response stays within your own network. No data is sent to external APIs, and no telemetry is collected.
+
+## What Ollama is
+
+[Ollama](https://ollama.com) is an open-source runtime that downloads, manages, and serves large language models locally. It exposes an HTTP API that SoftArchitect AI uses via LangChain. In the Docker stack, Ollama runs as the `sa_ollama` container and is accessible to the other services over the internal `sa_network`.
+
+## Enabling local LLM mode
+
+Open your `.env` file and set the provider:
+
+```bash
+LLM_PROVIDER=ollama
+```
+
+The API server reads `LLM_PROVIDER` at startup and routes all inference requests to the Ollama endpoint instead of a cloud API.
+
+## Recommended models
+
+The `.env.example` file lists the following recommended models:
+
+| Model | Best for | Approximate size |
+|-------|----------|------------------|
+| `qwen2.5-coder:7b` | Code-heavy architecture tasks | ~4.7 GB |
+| `llama3.2` | General architectural reasoning (default) | ~2.0 GB |
+| `phi4-mini` | Low-RAM machines | ~2.5 GB |
+
+The default configured in `.env.example` is:
+
+```bash
+OLLAMA_MODEL=llama3.2
+```
+
+Change this to any model supported by Ollama.
+
+## Pulling a model
+
+After the stack is running, pull your chosen model into the `sa_ollama` container:
+
+```bash
+docker exec sa_ollama ollama pull llama3.2
+```
+
+To pull a different model:
+
+```bash
+docker exec sa_ollama ollama pull qwen2.5-coder:7b
+```
+
+Model weights are stored in the `ollama_data` named Docker volume at `/root/.ollama/models` inside the container, so they persist across container restarts.
+
+<Tip>
+  List all models currently available in the container with `docker exec sa_ollama ollama list`.
+</Tip>
+
+## Internal Docker networking
+
+Because both the API server and Ollama run on the same Docker network (`sa_network`), the API container addresses Ollama by container name, not `localhost`:
+
+```bash
+OLLAMA_BASE_URL=http://ollama:11434
+```
+
+This value is hardcoded in the `environment` block of `docker-compose.yml` and overrides whatever `OLLAMA_BASE_URL` is set to in your `.env`, so you do not need to change it for the standard Docker deployment.
+
+## Memory limits
+
+The default memory allocation for Ollama is conservative to prevent out-of-memory crashes on machines with limited RAM:
+
+```bash
+OLLAMA_MEMORY_LIMIT=2GB
+OLLAMA_CPU_SHARES=1024
+```
+
+Adjust `OLLAMA_MEMORY_LIMIT` based on your hardware:
+
+| Available RAM | Recommended `OLLAMA_MEMORY_LIMIT` |
+|---------------|-----------------------------------|
+| 8 GB | `2GB` (default) |
+| 16 GB | `4GB` |
+| 32 GB+ | `8GB` or higher |
+
+<Warning>
+  Setting `OLLAMA_MEMORY_LIMIT` higher than the memory you can spare will cause the container to be killed by the OOM manager. Start with the default and increase only if inference is slow or models fail to load.
+</Warning>
+
+## Context window and RAG limits
+
+Most locally-run 7B models have an 8K token context window, which is much smaller than cloud models. To prevent prompt truncation errors and out-of-memory crashes, reduce the RAG limits when using Ollama:
+
+```bash
+# .env — local Ollama with 8K context window
+LLM_MAX_PROMPT_CHARS=30000
+RAG_MAX_CHUNKS=2
+```
+
+Compare this to the defaults for cloud providers:
+
+| Variable | Default (Gemini/Groq) | Recommended (Ollama 8K) |
+|----------|-----------------------|-------------------------|
+| `LLM_MAX_PROMPT_CHARS` | `200000` | `30000` |
+| `RAG_MAX_CHUNKS` | `3` | `2` |
+
+`LLM_MAX_PROMPT_CHARS` is calculated as tokens × 4. An 8K token model supports roughly 32,000 characters; the value `30000` provides a small safety margin.
+
+<Note>
+  The prompt safety net **truncates** the prompt rather than silently dropping RAG context, so architectural recommendations always remain grounded in the knowledge base even when the limit is hit.
+</Note>

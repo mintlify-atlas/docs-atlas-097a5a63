@@ -1,0 +1,188 @@
+---
+title: "Conversations"
+description: "Create and manage conversation history and chat sessions."
+---
+
+Conversations group a series of chat messages within a project. The Flutter client creates a conversation before sending the first chat message and uses the conversation ID when streaming subsequent messages.
+
+Conversations and messages are persisted in SQLite.
+
+---
+
+## POST /api/v1/conversations/
+
+Create a new conversation for a project.
+
+### Request body
+
+<ParamField body="project_id" type="string (UUID)" required>
+  The project this conversation belongs to.
+</ParamField>
+
+<ParamField body="title" type="string">
+  Optional human-readable title for the conversation. Maximum 255 characters.
+</ParamField>
+
+### Response
+
+Returns `201 Created` with a `ConversationResponse` object.
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "title": "Architecture planning session",
+  "messages": [],
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z"
+}
+```
+
+<ResponseField name="id" type="string (UUID)">
+  Unique conversation identifier. Use this as `conversation_id` in chat requests.
+</ResponseField>
+
+<ResponseField name="project_id" type="string (UUID)">
+  The project this conversation belongs to.
+</ResponseField>
+
+<ResponseField name="title" type="string | null">
+  The conversation title, or `null` if not set.
+</ResponseField>
+
+<ResponseField name="messages" type="array">
+  List of messages in this conversation. Empty on creation.
+
+  <Expandable title="message object">
+    <ResponseField name="id" type="string (UUID)">
+      Unique message identifier.
+    </ResponseField>
+    <ResponseField name="conversation_id" type="string (UUID)">
+      Parent conversation identifier.
+    </ResponseField>
+    <ResponseField name="role" type="string">
+      Message role. One of: `USER`, `ASSISTANT`, `SYSTEM`.
+    </ResponseField>
+    <ResponseField name="content" type="string">
+      Message text. Maximum 30,000 characters.
+    </ResponseField>
+    <ResponseField name="created_at" type="string (ISO 8601)">
+      Timestamp when the message was created.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="created_at" type="string (ISO 8601)">
+  Timestamp when the conversation was created.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string (ISO 8601)">
+  Timestamp of the last update to the conversation.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash curl
+curl -X POST http://localhost:8000/api/v1/conversations/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "title": "Architecture planning session"
+  }'
+```
+</CodeGroup>
+
+---
+
+## GET /api/v1/conversations/{conversation_id}
+
+Retrieve a single conversation by its UUID, including all messages.
+
+### Path parameters
+
+<ParamField path="conversation_id" type="string (UUID)" required>
+  The conversation UUID.
+</ParamField>
+
+### Response
+
+Returns `200 OK` with a `ConversationResponse` object (same shape as the create response above).
+
+### Errors
+
+| Status | Condition |
+|---|---|
+| `404 Not Found` | No conversation with the given ID exists |
+
+### Example
+
+<CodeGroup>
+```bash curl
+curl http://localhost:8000/api/v1/conversations/550e8400-e29b-41d4-a716-446655440000
+```
+</CodeGroup>
+
+---
+
+## GET /api/v1/conversations/
+
+List conversations with optional filtering by project and pagination.
+
+### Query parameters
+
+<ParamField query="project_id" type="string (UUID)">
+  Filter conversations to a specific project. When omitted, all conversations are returned.
+</ParamField>
+
+<ParamField query="skip" type="integer" default="0">
+  Number of records to skip (offset-based pagination).
+</ParamField>
+
+<ParamField query="limit" type="integer" default="100">
+  Maximum number of conversations to return.
+</ParamField>
+
+### Response
+
+```json
+{
+  "conversations": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "title": "Architecture planning session",
+      "messages": [],
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "total": 1,
+  "skip": 0,
+  "limit": 100
+}
+```
+
+<ResponseField name="conversations" type="array">
+  List of `ConversationResponse` objects. See the create endpoint for the full object shape.
+</ResponseField>
+
+<ResponseField name="total" type="integer">
+  Total number of conversations returned in this response. Note: this reflects the count of the current page, not the total across all pages.
+</ResponseField>
+
+<ResponseField name="skip" type="integer">
+  The `skip` value used for this request.
+</ResponseField>
+
+<ResponseField name="limit" type="integer">
+  The `limit` value used for this request.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+```bash curl
+curl "http://localhost:8000/api/v1/conversations/?project_id=7c9e6679-7425-40de-944b-e07fc1f90ae7&skip=0&limit=20"
+```
+</CodeGroup>

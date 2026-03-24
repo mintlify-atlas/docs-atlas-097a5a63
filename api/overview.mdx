@@ -1,0 +1,115 @@
+---
+title: "API overview"
+description: "The SoftArchitect AI REST API — base URL, authentication, versioning, and error handling."
+---
+
+SoftArchitect AI exposes a REST API that runs entirely on your local machine. All AI inference, vector search, and document storage happen locally — no data leaves your device unless you explicitly configure a cloud LLM provider.
+
+## Base URL
+
+```
+http://localhost:8000
+```
+
+The server binds to `0.0.0.0:8000` so it is reachable from Docker containers and other processes on the same host.
+
+## API versioning
+
+All stable endpoints are prefixed with `/api/v1`:
+
+```
+http://localhost:8000/api/v1
+```
+
+This prefix allows future breaking changes to be introduced under `/api/v2` without affecting existing clients.
+
+## Authentication
+
+The API supports an optional API key for access control. When configured, every request to `/api/v1/chat/stream` must include the key in the `X-API-Key` header.
+
+```bash
+curl -H "X-API-Key: your-key-here" http://localhost:8000/api/v1/chat/stream ...
+```
+
+For local development without a key configured the header is not required. The key is set via the `API_KEY` environment variable in `.env`.
+
+## CORS
+
+Cross-origin requests are permitted only from localhost origins:
+
+- `http://localhost:*`
+- `http://127.0.0.1:*`
+
+Remote origins are blocked. This is intentional — SoftArchitect AI is a local-first tool.
+
+## Content types
+
+| Use case | Content-Type |
+|---|---|
+| JSON request/response | `application/json` |
+| Streaming chat | `text/event-stream` (Server-Sent Events) |
+
+## Error responses
+
+All error responses follow a consistent JSON shape:
+
+```json
+{
+  "detail": "Human-readable error message"
+}
+```
+
+For structured application errors the body may include additional fields:
+
+```json
+{
+  "error_code": "LLM_001",
+  "error_message": "Unable to connect to AI engine",
+  "status_code": 503,
+  "details": {}
+}
+```
+
+### HTTP status codes
+
+| Code | Meaning |
+|---|---|
+| `200 OK` | Request succeeded |
+| `201 Created` | Resource created |
+| `400 Bad Request` | Invalid request payload or deprecated endpoint |
+| `404 Not Found` | Resource does not exist |
+| `422 Unprocessable Entity` | Pydantic validation failure (field-level errors) |
+| `500 Internal Server Error` | Unexpected server error (stack trace never exposed) |
+| `503 Service Unavailable` | LLM engine or downstream service unreachable |
+
+## Available endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | API root — name, version, status |
+| `GET` | `/api/v1/system/health` | Liveness health check |
+| `POST` | `/api/v1/chat/stream` | Streaming SSE chat with RAG |
+| `POST` | `/api/v1/chat/generate` | Legacy streaming document generation (SSE) |
+| `POST` | `/api/v1/chat/message` | Deprecated — returns `400`, use `/chat/stream` |
+| `WS` | `/api/v1/chat/stream` | WebSocket streaming for token delivery |
+| `POST` | `/api/v1/conversations/` | Create a conversation |
+| `GET` | `/api/v1/conversations/` | List conversations (paginated) |
+| `GET` | `/api/v1/conversations/{id}` | Get a single conversation |
+| `POST` | `/api/v1/projects/{project_id}/documents/ingest` | Ingest a document into a project vector store |
+| `GET` | `/api/v1/knowledge/search` | Search the knowledge base (stub — Phase 2) |
+| `POST` | `/api/v1/rag/test/retrieval` | Temporary RAG retrieval test endpoint |
+| `GET` | `/api/v1/rag/test/health` | RAG system health check |
+
+## Interactive documentation
+
+FastAPI generates an interactive Swagger UI automatically:
+
+```
+http://localhost:8000/docs
+```
+
+A ReDoc alternative is available at:
+
+```
+http://localhost:8000/redoc
+```

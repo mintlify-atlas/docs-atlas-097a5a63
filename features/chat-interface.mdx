@@ -1,0 +1,211 @@
+---
+title: "Chat interface"
+description: "Real-time streaming chat with RAG-augmented architectural guidance"
+---
+
+The SoftArchitect AI chat interface is a Flutter desktop application that streams architectural guidance token-by-token as the LLM generates it. Every message goes through the RAG pipeline before the model sees it, so responses are grounded in your project's specific technology decisions rather than generic advice.
+
+## How streaming works
+
+The Flutter client sends a `POST` request to `/api/v1/chat/stream` and keeps the connection open to receive Server-Sent Events (SSE). The backend yields three event types:
+
+| Event | Payload | When |
+|-------|---------|------|
+| `message` | `{"token": "...", "is_final": false}` | Each incremental token from the LLM |
+| `done` | `{"full_response": "", "sources": [...], "metadata": {...}}` | After the last token |
+| `error` | `{"error": "...", "code": "...", "retry": bool}` | On any failure |
+
+The response headers disable caching and proxy buffering so tokens reach the client immediately:
+
+```python
+return StreamingResponse(
+    event_generator(),
+    media_type="text/event-stream",
+    headers={
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    },
+)
+```
+
+## Request and response shapes
+
+### Chat stream request
+
+`POST /api/v1/chat/stream`
+
+```json
+{
+  "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message": "How should I structure authentication in my Flutter app?",
+  "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "user_name": "Developer",
+  "doc_type": "TECH_STACK_DECISION",
+  "history": [
+    {"role": "user", "content": "I'm building a mobile banking app."},
+    {"role": "assistant", "content": "Great. Let's start with the project manifesto..."}
+  ],
+  "project_context": {
+    "context/10-CONTEXT/PROJECT_MANIFESTO.md": "# Mobile Banking App\n..."
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `conversation_id` | UUID | Unique identifier for this conversation session. |
+| `message` | string | User input. Max `CHAT_MAX_MESSAGE_LENGTH` characters (default 20,000). |
+| `project_id` | UUID | Used to route per-project semantic RAG retrieval. |
+| `user_name` | string | Injected into the system prompt for personalized responses. |
+| `doc_type` | string \| null | Target document type (e.g. `TECH_STACK_DECISION`). Determines which template and example the orchestrator injects. |
+| `history` | array | Previous messages for multi-turn context (max `CHAT_MAX_HISTORY_MESSAGES`, code default `100`, `.env.example` template sets `50`). |
+| `project_context` | object | Key-value map of already-generated project files. Prevents document inconsistency across workflow steps. |
+
+### Streaming response (SSE)
+
+```text
+event: message
+data: {"token": "For", "is_final": false}
+
+event: message
+data: {"token": " authentication", "is_final": false}
+
+event: message
+data: {"token": " in Flutter", "is_final": false}
+
+event: done
+data: {"full_response": "", "sources": ["TECH_STACK_DECISION"], "metadata": {"template_used": "TECH_STACK_DECISION"}}
+```
+
+### Error events
+
+```text
+event: error
+data: {"error": "AI Engine is unreachable", "code": "LLM_CONNECTION_ERROR", "retry": true}
+```
+
+Error codes and their retry guidance:
+
+| Code | Meaning | Retry |
+|------|---------|-------|
+| `LLM_CONNECTION_ERROR` | LLM provider is unreachable | Yes |
+| `RAG_RETRIEVAL_ERROR` | ChromaDB query failed | No |
+| `STREAM_ERROR` | Unexpected error during streaming | No |
+
+## Document generation endpoint
+
+`POST /api/v1/chat/generate` is a legacy endpoint kept for backward compatibility. It accepts a slightly different request shape:
+
+```json
+{
+  "message": "Build me an architecture for a fintech app",
+  "doc_type": "PROJECT_MANIFESTO",
+  "project_context": {},
+  "chat_history": []
+}
+```
+
+New integrations should use `/api/v1/chat/stream`, which integrates with FastAPI's dependency injection system and supports API key verification.
+
+## Available doc types
+
+The `doc_type` field maps directly to one of the 24 steps in the Master Workflow. Each type has a corresponding template and example file that the `WorkflowInjector` reads from disk and injects into the LLM prompt.
+
+<Tabs>
+  <Tab title="Phase 1 — Context">
+    | `doc_type` | Output file |
+    |-----------|-------------|
+    | `PROJECT_MANIFESTO` | `context/10-CONTEXT/PROJECT_MANIFESTO.md` |
+    | `DOMAIN_LANGUAGE` | `context/10-CONTEXT/DOMAIN_LANGUAGE.md` |
+    | `USER_JOURNEY_MAP` | `context/10-CONTEXT/USER_JOURNEY_MAP.md` |
+  </Tab>
+  <Tab title="Phase 2 — Requirements">
+    | `doc_type` | Output file |
+    |-----------|-------------|
+    | `REQUIREMENTS_MASTER` | `context/20-REQUIREMENTS/REQUIREMENTS_MASTER.md` |
+    | `USER_STORIES_MASTER` | `context/20-REQUIREMENTS/USER_STORIES_MASTER.json` |
+    | `SECURITY_PRIVACY_POLICY` | `context/20-REQUIREMENTS/SECURITY_PRIVACY_POLICY.md` |
+    | `COMPLIANCE_MATRIX` | `context/20-REQUIREMENTS/COMPLIANCE_MATRIX.md` |
+  </Tab>
+  <Tab title="Phase 3 — Architecture">
+    | `doc_type` | Output file |
+    |-----------|-------------|
+    | `TECH_STACK_DECISION` | `context/30-ARCHITECTURE/TECH_STACK_DECISION.md` |
+    | `DATA_MODEL_SCHEMA` | `context/30-ARCHITECTURE/DATA_MODEL_SCHEMA.md` |
+    | `API_INTERFACE_CONTRACT` | `context/30-ARCHITECTURE/API_INTERFACE_CONTRACT.md` |
+    | `PROJECT_STRUCTURE_MAP` | `context/30-ARCHITECTURE/PROJECT_STRUCTURE_MAP.md` |
+    | `SECURITY_THREAT_MODEL` | `context/30-ARCHITECTURE/SECURITY_THREAT_MODEL.md` |
+    | `ARCH_DECISION_RECORDS` | `context/30-ARCHITECTURE/ARCH_DECISION_RECORDS.md` |
+  </Tab>
+  <Tab title="Phases 4–6">
+    | `doc_type` | Phase |
+    |-----------|-------|
+    | `DESIGN_SYSTEM` | 4 — UX/UI |
+    | `UI_WIREFRAMES_FLOW` | 4 — UX/UI |
+    | `ACCESSIBILITY_GUIDE` | 4 — UX/UI |
+    | `ROADMAP_PHASES` | 5 — Planning |
+    | `DEPLOYMENT_INFRASTRUCTURE` | 5 — Planning |
+    | `CI_CD_PIPELINE` | 5 — Planning |
+    | `TESTING_STRATEGY` | 5 — Planning |
+    | `RULES` | 6 — Root synthesis |
+    | `CONTRIBUTING` | 6 — Root synthesis |
+    | `AGENTS` | 6 — Root synthesis |
+    | `README` | 6 — Root synthesis |
+  </Tab>
+</Tabs>
+
+## Chat history and message limits
+
+Two environment variables control memory usage and prevent context-window overflow:
+
+```bash
+# .env — these values override the code defaults
+CHAT_MAX_HISTORY_MESSAGES=50    # Code default: 100; .env.example sets 50
+CHAT_MAX_MESSAGE_LENGTH=20000
+```
+
+The `ChatRequest` validator enforces both limits at the API boundary:
+
+```python
+@field_validator("message")
+@classmethod
+def sanitize_message(cls, v: str) -> str:
+    if len(v) > settings.CHAT_MAX_MESSAGE_LENGTH:
+        raise ValueError(
+            f"Message exceeds maximum length of {settings.CHAT_MAX_MESSAGE_LENGTH} characters."
+        )
+    return InputSanitizer.sanitize_message(v)
+
+@field_validator("history")
+@classmethod
+def validate_history(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
+    max_msgs = settings.CHAT_MAX_HISTORY_MESSAGES
+    if len(v) > max_msgs:
+        raise ValueError(
+            f"Chat history exceeds maximum length ({max_msgs} messages)."
+        )
+```
+
+The orchestrator additionally keeps only the last 4 history messages when building the LLM prompt, replacing large assistant responses with a short placeholder to avoid saturating the context window:
+
+```python
+for msg in raw_history[-4:]:
+    role = msg.get("role", "user")
+    content = msg.get("content", "")
+    if role == "assistant" and any(
+        marker in content for marker in ("**Path:**", "Path:", "[document]")
+    ):
+        content = (
+            "[Previous document generated and saved successfully."
+            " Omitted from memory to save context]"
+        )
+```
+
+## Optimistic UI
+
+The Flutter client renders tokens as they arrive rather than waiting for the full response. This pattern (optimistic UI) keeps perceived latency below 200ms for the first visible character regardless of the LLM provider or network conditions.
+
+<Tip>
+  When switching from Gemini or Groq to a local Ollama model, reduce `LLM_MAX_PROMPT_CHARS` to `30000` and `RAG_MAX_CHUNKS` to `2`. This prevents the longer assembly time from making the first token appear slow.
+</Tip>

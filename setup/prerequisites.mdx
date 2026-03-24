@@ -1,0 +1,110 @@
+---
+title: "Prerequisites"
+description: "What you need before installing SoftArchitect AI."
+---
+
+Before you deploy SoftArchitect AI, make sure your machine meets the software and hardware requirements below.
+
+## Required software
+
+<Steps>
+  <Step title="Install Docker 20.10+">
+    Docker is required to run all three services (API, ChromaDB, Ollama) in isolated containers.
+
+    ```bash
+    docker --version
+    # Docker version 20.10.x, build ...
+    ```
+
+    Download from the [official Docker site](https://docs.docker.com/get-docker/).
+  </Step>
+
+  <Step title="Install Docker Compose 2.0+">
+    SoftArchitect AI uses the `docker compose` (v2) CLI plugin, not the legacy `docker-compose` binary.
+
+    ```bash
+    docker compose version
+    # Docker Compose version v2.x.x
+    ```
+
+    Docker Desktop includes Compose v2 by default. On Linux, install it via the [Docker Compose plugin guide](https://docs.docker.com/compose/install/).
+  </Step>
+
+  <Step title="Install Git">
+    Git is required to clone the repository.
+
+    ```bash
+    git --version
+    # git version 2.x.x
+    ```
+  </Step>
+</Steps>
+
+## Optional software
+
+<CardGroup cols={2}>
+  <Card title="Ollama (local LLM mode)" icon="cpu">
+    Install [Ollama](https://ollama.com) on your host machine if you want to run LLM inference natively outside Docker. For the fully containerised setup, Ollama runs inside the `sa_ollama` container automatically — no host installation needed.
+  </Card>
+  <Card title="API keys (cloud mode)" icon="key">
+    If you prefer cloud inference, obtain an API key from [Google AI Studio](https://aistudio.google.com) (Gemini) or [Groq](https://console.groq.com) (Groq). Cloud mode requires only 4 GB RAM on the host.
+  </Card>
+</CardGroup>
+
+## Hardware requirements
+
+| Mode | Minimum RAM | Recommended RAM | Notes |
+|------|-------------|-----------------|-------|
+| Local Ollama | 8 GB | 16 GB | Ollama container default memory limit: `2GB` (adjustable via `OLLAMA_MEMORY_LIMIT`) |
+| Cloud API (Gemini / Groq) | 4 GB | 8 GB | No local model weights downloaded |
+
+<Note>
+  The `validate-docker-setup.sh` script in `infrastructure/` warns you when available RAM appears to be below 8 GB and suggests reducing `OLLAMA_MEMORY_LIMIT` in your `.env` file.
+</Note>
+
+### Disk space
+
+| Resource | Approximate size |
+|----------|------------------|
+| Docker images (API + ChromaDB + Ollama) | ~3 GB |
+| LLM model weights (e.g., `llama3.2`) | 2–8 GB depending on the model |
+| ChromaDB vector index | grows with usage |
+
+A minimum of **20 GB** of free disk space is recommended.
+
+## Operating system support
+
+<CardGroup cols={3}>
+  <Card title="Linux" icon="linux">
+    Fully supported. Native Docker engine provides best performance for local LLM inference.
+  </Card>
+  <Card title="macOS" icon="apple">
+    Supported via Docker Desktop. Apple Silicon (M1/M2/M3) can use Metal GPU acceleration with Ollama.
+  </Card>
+  <Card title="Windows" icon="windows">
+    Supported via Docker Desktop with WSL 2 backend. NVIDIA GPU pass-through requires the NVIDIA Container Toolkit for WSL.
+  </Card>
+</CardGroup>
+
+## Verifying your installation
+
+Run the following commands to confirm both tools are available before proceeding:
+
+```bash
+# Check Docker version (must be 20.10+)
+docker --version
+
+# Check Compose version (must be v2.0+)
+docker compose version
+
+# Verify the Docker daemon is running
+docker ps
+```
+
+You can also run the bundled validator from the repository root after cloning:
+
+```bash
+bash infrastructure/validate-docker-setup.sh
+```
+
+This script performs nine checks including Docker installation, daemon status, available ports (8000, 8001, 11434), disk space, and optional NVIDIA GPU detection.

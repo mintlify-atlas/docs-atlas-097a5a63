@@ -1,0 +1,73 @@
+---
+title: "Introduction"
+description: "SoftArchitect AI is your virtual senior architect — a local-first AI assistant that guides you through the most critical phase of software development: project conception."
+---
+
+SoftArchitect AI is not just another code chat. It is your **shadow software architect**.
+
+It is an assisted work environment that guides the most critical and often overlooked phase of development: **project conception**. By leveraging RAG (Retrieval-Augmented Generation) over a curated knowledge base, it ensures your application design complies with SOLID principles, Clean Architecture, and OWASP security guidelines before you write the first line of code.
+
+Its mission is clear: **transform abstract ideas into development-ready technical specifications, cutting technical debt at the root**.
+
+## The guided architectural workflow
+
+Every session follows a structured five-stage process that acts as a preventive quality gate:
+
+| Stage | Purpose |
+|---|---|
+| **Context** | Capture project background, team constraints, and existing systems |
+| **Requirements** | Define functional and non-functional requirements with the AI |
+| **Architecture** | Select patterns, tech stacks, and validate against best practices |
+| **UX/UI** | Design user flows and interface decisions grounded in architecture |
+| **Planning** | Break the design into actionable development tasks and stories |
+
+Each stage builds on the last, so decisions made early — about domain boundaries, data ownership, or security posture — propagate cleanly into the final technical specification.
+
+## Why local-first matters
+
+SoftArchitect AI runs entirely on your machine. Your architecture decisions, business requirements, and source context never leave your network unless you explicitly choose a cloud provider.
+
+Two modes are available:
+
+- **Privacy mode** — Runs inference via [Ollama](https://ollama.com) on your local hardware. Zero external API calls.
+- **Performance mode** — Connects to Groq Cloud or Google Gemini for faster inference on modest hardware, with your explicit opt-in.
+
+The `LLM_PROVIDER` variable in your `.env` controls which mode is active.
+
+## Key capabilities
+
+<CardGroup cols={2}>
+  <Card title="Contextual RAG & Tech Packs" icon="brain">
+    A modular "Technical Encyclopedia" (`packages/knowledge_base/02-TECH-PACKS`) lets the assistant interview you to configure specific stacks — Flutter, Python, Firebase — with precise architecture rules baked in.
+  </Card>
+  <Card title="Context Factory" icon="factory">
+    Automatically generates technical documentation (`AGENTS.md`, `RULES.md`) so your AI coding copilot works with full project context from day one.
+  </Card>
+  <Card title="Streaming chat" icon="message-square">
+    Real-time token streaming from any LLM provider with WebSocket delivery, heartbeat management, and backpressure handling for a fluid, non-blocking experience.
+  </Card>
+  <Card title="Hardware-agnostic tuning" icon="sliders">
+    Two `.env` variables — `LLM_MAX_PROMPT_CHARS` and `RAG_MAX_CHUNKS` — let you match the RAG pipeline to your model's context window, from an 8K local Ollama model to a 200K-token cloud API.
+  </Card>
+</CardGroup>
+
+## Technology stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Flutter Desktop (Linux, Windows, macOS) |
+| Backend | Python 3.12 · FastAPI · LangChain |
+| AI engine | Ollama (local) · Groq Cloud · Google Gemini |
+| Vector store | ChromaDB |
+| Infrastructure | Docker Compose |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get SoftArchitect AI running locally in under 5 minutes.
+  </Card>
+  <Card title="Architecture" icon="layers" href="/architecture">
+    Understand the Clean Architecture and Hexagonal design of the codebase.
+  </Card>
+</CardGroup>

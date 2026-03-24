@@ -1,0 +1,197 @@
+---
+title: "Environment configuration"
+description: "Complete reference for all .env configuration variables."
+---
+
+All runtime configuration for SoftArchitect AI lives in a single `.env` file at the repository root. This file is never committed to version control.
+
+## Creating your .env file
+
+```bash
+# From the repository root
+cp .env.example .env
+```
+
+Then open `.env` in your editor and fill in any API keys and adjust resource limits for your hardware.
+
+<Note>
+  The `.env.example` file at the repository root is the authoritative template. It is committed to version control to document every available variable and its default value. Never edit `.env.example` directly for local use — always copy it to `.env` first.
+</Note>
+
+## Variable reference
+
+### 0. Global app settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PROJECT_NAME` | `"SoftArchitect AI"` | Display name used in logs and API responses. |
+| `ENVIRONMENT` | `development` | Runtime environment. Set to `production` for deployed instances. |
+| `DEBUG` | `False` | Enables verbose debug output. Do not enable in production. |
+| `LOG_LEVEL` | `INFO` | Logging verbosity. Accepts `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
+
+### 1. Docker resources and images
+
+These variables control which Docker image versions are pulled and how much memory each container may use.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PYTHON_VERSION` | `3.12.3` | Python version used to build the `sa_api` image. |
+| `OLLAMA_IMAGE_VERSION` | `latest` | Ollama Docker image tag. Pin to a specific version for reproducible builds. |
+| `CHROMADB_IMAGE_VERSION` | `latest` | ChromaDB Docker image tag. |
+| `OLLAMA_MEMORY_LIMIT` | `2GB` | Maximum RAM for the `sa_ollama` container. Increase to `4GB` if you have 16 GB+ RAM. |
+| `OLLAMA_CPU_SHARES` | `1024` | Relative CPU weight for `sa_ollama`. |
+| `CHROMADB_MEMORY_LIMIT` | `512MB` | Maximum RAM for the `sa_chromadb` container. |
+| `API_MEMORY_LIMIT` | `512MB` | Maximum RAM for the `sa_api` container. |
+
+### 2. LLM provider selection
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_PROVIDER` | `gemini` | Active LLM backend. Valid values: `gemini`, `groq`, `ollama`. |
+
+<Tip>
+  Set `LLM_PROVIDER=ollama` for fully private, offline operation. Set it to `gemini` or `groq` for faster cloud-based inference with minimal hardware requirements.
+</Tip>
+
+### 3. Gemini configuration
+
+Used when `LLM_PROVIDER=gemini`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GEMINI_API_KEY` | `your_gemini_api_key_here` | API key from [Google AI Studio](https://aistudio.google.com). Required for Gemini mode. |
+| `GEMINI_MODEL` | `gemini-3.1-flash-lite-preview` | Gemini model identifier. |
+
+### 4. Ollama configuration
+
+Used when `LLM_PROVIDER=ollama`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_MODEL` | `llama3.2` | Model to load for inference. Recommended: `qwen2.5-coder:7b`, `llama3.2`, `phi4-mini`. |
+| `OLLAMA_BASE_URL` | `http://ollama:11434` | Ollama HTTP endpoint. This is the internal Docker network address used by `sa_api` to reach `sa_ollama`. |
+
+<Note>
+  The `OLLAMA_BASE_URL` value in your `.env` is overridden by a hardcoded environment variable in `docker-compose.yml` (`http://sa_ollama:11434`). You only need to change `OLLAMA_BASE_URL` if you are running Ollama outside of Docker.
+</Note>
+
+### 5. Groq configuration
+
+Used when `LLM_PROVIDER=groq`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GROQ_API_KEY` | `your_groq_api_key_here` | API key from [Groq Console](https://console.groq.com). Required for Groq mode. |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model identifier. |
+
+### 6. Vector DB (ChromaDB)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CHROMADB_HOST` | `chromadb` | ChromaDB hostname as seen from the `sa_api` container on `sa_network`. |
+| `CHROMADB_PORT` | `8000` | ChromaDB internal port. Exposed to the host as `8001`. |
+| `CHROMADB_DATA_PATH` | `/data/chromadb` | Path inside the ChromaDB container where the vector index is persisted. |
+
+### 7. RAG and context limits
+
+These variables prevent out-of-memory crashes when using models with small context windows.
+
+| Variable | Default | Ollama 8K model | Gemini / Groq |
+|----------|---------|-----------------|---------------|
+| `LLM_MAX_PROMPT_CHARS` | `200000` | `30000` | `200000` |
+| `RAG_MAX_CHUNKS` | `3` | `2` | `3`–`5` |
+
+`LLM_MAX_PROMPT_CHARS` is the maximum number of characters the prompt may contain (approximately tokens × 4). `RAG_MAX_CHUNKS` is the number of context fragments retrieved from ChromaDB per query.
+
+```bash
+# .env — local Ollama with 8K context window
+LLM_MAX_PROMPT_CHARS=30000
+RAG_MAX_CHUNKS=2
+
+# .env — cloud API (Gemini or Groq)
+LLM_MAX_PROMPT_CHARS=200000
+RAG_MAX_CHUNKS=5
+```
+
+### 8. Privacy, security, and memory
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IRON_MODE` | `True` | When enabled, enforces strict data sovereignty rules — no external API calls are made unless `LLM_PROVIDER` explicitly uses a cloud backend. |
+| `PII_DETECTION_ENABLED` | `True` | Scans user inputs for personally identifiable information before they are passed to the LLM. |
+| `CHAT_MAX_HISTORY_MESSAGES` | `50` (template) / `100` (code) | Maximum number of messages retained in the conversation history to prevent context saturation. `.env.example` sets `50`. |
+| `CHAT_MAX_MESSAGE_LENGTH` | `20000` | Maximum character length of a single user message. |
+
+<Warning>
+  Do not set `IRON_MODE=False` unless you fully understand the privacy implications. This flag is the primary enforcement gate that prevents accidental data leakage to external services.
+</Warning>
+
+## Full .env.example reference
+
+For convenience, the complete template as shipped in the repository:
+
+```bash
+# ─────────────────────────────────────────────────────────────
+# 0. GLOBAL APP SETTINGS
+# ─────────────────────────────────────────────────────────────
+PROJECT_NAME="SoftArchitect AI"
+ENVIRONMENT=development
+DEBUG=False
+LOG_LEVEL=INFO
+
+# ─────────────────────────────────────────────────────────────
+# 1. DOCKER RESOURCES & IMAGES
+# ─────────────────────────────────────────────────────────────
+PYTHON_VERSION=3.12.3
+OLLAMA_IMAGE_VERSION=latest
+CHROMADB_IMAGE_VERSION=latest
+
+OLLAMA_MEMORY_LIMIT=2GB
+OLLAMA_CPU_SHARES=1024
+CHROMADB_MEMORY_LIMIT=512MB
+API_MEMORY_LIMIT=512MB
+
+# ─────────────────────────────────────────────────────────────
+# 2. LLM PROVIDER SELECTION
+# ─────────────────────────────────────────────────────────────
+LLM_PROVIDER=gemini
+
+# ─────────────────────────────────────────────────────────────
+# 3. GEMINI CONFIGURATION (Cloud - Default)
+# ─────────────────────────────────────────────────────────────
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.1-flash-lite-preview
+
+# ─────────────────────────────────────────────────────────────
+# 4. OLLAMA CONFIGURATION (Local/Offline)
+# ─────────────────────────────────────────────────────────────
+OLLAMA_MODEL=llama3.2
+OLLAMA_BASE_URL=http://ollama:11434
+
+# ─────────────────────────────────────────────────────────────
+# 5. GROQ CONFIGURATION (Cloud - Fast)
+# ─────────────────────────────────────────────────────────────
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+
+# ─────────────────────────────────────────────────────────────
+# 6. VECTOR DB (ChromaDB)
+# ─────────────────────────────────────────────────────────────
+CHROMADB_HOST=chromadb
+CHROMADB_PORT=8000
+CHROMADB_DATA_PATH=/data/chromadb
+
+# ─────────────────────────────────────────────────────────────
+# 7. RAG & CONTEXT LIMITS
+# ─────────────────────────────────────────────────────────────
+LLM_MAX_PROMPT_CHARS=200000
+RAG_MAX_CHUNKS=3
+
+# ─────────────────────────────────────────────────────────────
+# 8. PRIVACY, SECURITY & MEMORY
+# ─────────────────────────────────────────────────────────────
+IRON_MODE=True
+PII_DETECTION_ENABLED=True
+CHAT_MAX_HISTORY_MESSAGES=50
+CHAT_MAX_MESSAGE_LENGTH=20000
+```

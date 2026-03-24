@@ -1,0 +1,235 @@
+---
+title: "Production checklist"
+description: "Everything you need to configure before running SoftArchitect AI in a production or team environment."
+---
+
+SoftArchitect AI is designed for local-first use, but it also runs well as a shared team service. This checklist covers the changes needed to move from a developer laptop setup to a production deployment.
+
+<Warning>
+  Complete all steps in this checklist before exposing the API to a network. The default configuration is optimised for ease of local setup, not hardened for external access.
+</Warning>
+
+---
+
+## Pre-production steps
+
+<Steps>
+  <Step title="Configure .env with production settings">
+    Copy `.env.example` to `.env` and set the following values:
+
+    ```bash
+    # Disable debug mode and reduce log verbosity
+    ENVIRONMENT=production
+    DEBUG=False
+    LOG_LEVEL=WARNING
+    ```
+
+    With `DEBUG=False`, FastAPI disables automatic interactive API docs (`/docs`, `/redoc`) and suppresses internal stack traces from API error responses.
+
+    The full set of configurable variables:
+
+    | Variable | Default | Production recommendation |
+    |---|---|---|
+    | `ENVIRONMENT` | `development` | `production` |
+    | `DEBUG` | `False` | `False` |
+    | `LOG_LEVEL` | `INFO` | `WARNING` |
+    | `CHAT_MAX_HISTORY_MESSAGES` | `50` | `20`–`50` depending on RAM |
+    | `CHAT_MAX_MESSAGE_LENGTH` | `20000` | Keep at `20000` or reduce for tighter input control |
+    | `LLM_MAX_PROMPT_CHARS` | `200000` | `30000` for local Ollama; `200000` for cloud APIs |
+    | `RAG_MAX_CHUNKS` | `3` | `2` for local Ollama; `3`–`5` for cloud APIs |
+
+    <Tip>
+      For a team deployment running on a server with cloud API access, the cloud settings (`LLM_MAX_PROMPT_CHARS=200000`, `RAG_MAX_CHUNKS=5`) give the best recommendation quality.
+    </Tip>
+  </Step>
+
+  <Step title="Enable HTTPS with a reverse proxy">
+    The API server binds to HTTP on port 8000. In production, place an Nginx or Traefik reverse proxy in front to terminate TLS.
+
+    **Nginx example** (`/etc/nginx/sites-available/softarchitect`):
+
+    ```nginx
+    server {
+        listen 443 ssl;
+        server_name softarchitect.your-domain.com;
+
+        ssl_certificate     /etc/letsencrypt/live/softarchitect.your-domain.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/softarchitect.your-domain.com/privkey.pem;
+
+        # Required for SSE streaming (chat responses)
+        proxy_buffering off;
+        proxy_cache off;
+
+        location / {
+            proxy_pass         http://127.0.0.1:8000;
+            proxy_set_header   Host $host;
+            proxy_set_header   X-Real-IP $remote_addr;
+            proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header   X-Forwarded-Proto $scheme;
+
+            # Keep SSE connections alive
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+        }
+    }
+
+    server {
+        listen 80;
+        server_name softarchitect.your-domain.com;
+        return 301 https://$host$request_uri;
+    }
+    ```
+
+    <Note>
+      The `proxy_buffering off` directive is required for the streaming chat endpoint (`POST /api/v1/chat/stream`). Without it, Nginx will buffer the entire Server-Sent Events stream before forwarding, breaking the real-time output.
+    </Note>
+  </Step>
+
+  <Step title="Choose your LLM provider">
+    Set `LLM_PROVIDER` in `.env` to one of three options:
+
+    ```bash
+    # Option A: Gemini cloud (recommended for teams — best quality, fast)
+    LLM_PROVIDER=gemini
+    GEMINI_API_KEY=your_gemini_api_key_here
+    GEMINI_MODEL=gemini-3.1-flash-lite-preview
+
+    # Option B: Groq cloud (fast inference, open models)
+    LLM_PROVIDER=groq
+    GROQ_API_KEY=your_groq_api_key_here
+    GROQ_MODEL=llama-3.3-70b-versatile
+
+    # Option C: Ollama local (maximum privacy — data never leaves your server)
+    LLM_PROVIDER=ollama
+    OLLAMA_MODEL=llama3.2
+    OLLAMA_BASE_URL=http://ollama:11434
+    ```
+
+    | Provider | Privacy | Speed | Hardware requirement |
+    |---|---|---|---|
+    | `gemini` | Data sent to Google | Fast | None (cloud) |
+    | `groq` | Data sent to Groq | Very fast | None (cloud) |
+    | `ollama` | Fully local | Depends on GPU | 8–16 GB RAM |
+
+    <Warning>
+      If you are processing sensitive or proprietary architecture designs, use `LLM_PROVIDER=ollama`. Cloud providers (`gemini`, `groq`) send your project context to external servers.
+    </Warning>
+  </Step>
+
+  <Step title="Configure a backup strategy">
+    Persistent data lives in two directories:
+
+    ```text
+    infrastructure/
+    ├── chroma_data/   ← ChromaDB vector store (knowledge base + project embeddings)
+    └── data/
+        └── logs/      ← Application logs
+    ```
+
+    Back up `infrastructure/chroma_data/` regularly. If this directory is lost, you will need to re-ingest the knowledge base and will lose any project-specific embeddings.
+
+    A simple daily backup with `rsync`:
+
+    ```bash
+    rsync -av --delete \
+      infrastructure/chroma_data/ \
+      /your/backup/location/chroma_data_$(date +%Y%m%d)/
+    ```
+
+    Or add a volume backup step to your CI/CD pipeline before any destructive operations.
+  </Step>
+
+  <Step title="Set up log monitoring">
+    Application logs are written to `infrastructure/data/logs/` via the Docker volume mount defined in `docker-compose.yml`:
+
+    ```yaml
+    volumes:
+      - ./data/logs:/app/logs
+    ```
+
+    You can tail logs in real time:
+
+    ```bash
+    docker logs -f sa_api
+    ```
+
+    Or stream from the mounted log directory:
+
+    ```bash
+    tail -f infrastructure/data/logs/app.log
+    ```
+
+    For production, consider forwarding logs to a centralised service (Loki, Datadog, CloudWatch) by mounting a logging driver in `docker-compose.yml`.
+
+    Set `LOG_LEVEL=WARNING` in `.env` to reduce noise. The API server uses Python's standard logging library and respects this setting across all modules.
+  </Step>
+
+  <Step title="Review security settings">
+    Two environment variables control the security posture of the AI pipeline:
+
+    ```bash
+    # Enforce strict input sanitisation (recommended: True)
+    IRON_MODE=True
+
+    # Detect and redact PII before sending to the LLM (recommended: True)
+    PII_DETECTION_ENABLED=True
+    ```
+
+    **`IRON_MODE=True`** enables the full sanitisation pipeline: every user message is validated and stripped of prompt injection attempts before reaching the LLM. Disable only in isolated development environments.
+
+    **`PII_DETECTION_ENABLED=True`** scans messages for personally identifiable information (names, emails, phone numbers, etc.) and redacts them before the prompt is constructed. This is particularly important if users are describing real customer data in their architecture interviews.
+
+    Additional security hardening steps from the Security Hardening Policy:
+
+    - [ ] Confirm `.env` is not committed to version control (`git status` should not list it)
+    - [ ] Confirm the Dockerfile runs as a non-root user (`USER appuser`)
+    - [ ] Confirm `docker-compose.yml` uses `${VAR}` references, not hardcoded values
+    - [ ] Apply restrictive permissions to data directories:
+          ```bash
+          chmod 755 infrastructure/chroma_data
+          chmod 755 infrastructure/data
+          chmod 600 .env
+          ```
+    - [ ] Run the security audit script:
+          ```bash
+          bash infrastructure/security-validation.sh
+          # Expected output: 🔒 Status: SECURE
+          ```
+  </Step>
+
+  <Step title="Set chat limits">
+    Two variables prevent individual sessions from consuming excessive memory or generating oversized prompts:
+
+    ```bash
+    # Maximum number of messages retained in a session's history
+    # Each message is included in the RAG prompt, so keep this bounded.
+    CHAT_MAX_HISTORY_MESSAGES=50
+
+    # Maximum length of a single user message (characters)
+    # Prevents abnormally large inputs from bloating the prompt.
+    CHAT_MAX_MESSAGE_LENGTH=20000
+    ```
+
+    For a shared team deployment where multiple users run simultaneous sessions, consider reducing `CHAT_MAX_HISTORY_MESSAGES` to `20`–`30` to limit per-session memory pressure on the Ollama container.
+
+    The API enforces these limits at the request boundary — messages that exceed `CHAT_MAX_MESSAGE_LENGTH` are rejected with a `422 Unprocessable Entity` response before reaching the LLM.
+  </Step>
+</Steps>
+
+---
+
+## Final checklist
+
+Before going live, confirm each item below:
+
+- [ ] `DEBUG=False` and `LOG_LEVEL=WARNING` set in `.env`
+- [ ] HTTPS termination configured (Nginx/Traefik) with `proxy_buffering off` for SSE
+- [ ] `LLM_PROVIDER` set to your chosen provider with valid API key (or Ollama running)
+- [ ] `chroma_data/` backup strategy in place and tested
+- [ ] Log forwarding or monitoring configured
+- [ ] `IRON_MODE=True` and `PII_DETECTION_ENABLED=True`
+- [ ] `.env` not committed; `chmod 600 .env` applied
+- [ ] Security validation script passes: `bash infrastructure/security-validation.sh`
+- [ ] Docker containers run as non-root (`USER appuser` in Dockerfile)
+- [ ] `CHAT_MAX_HISTORY_MESSAGES` and `CHAT_MAX_MESSAGE_LENGTH` tuned for your expected load
+- [ ] Knowledge base vectors present in ChromaDB (`curl http://localhost:8001/api/v1/collections` shows the `softarchitect` collection)

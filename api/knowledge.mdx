@@ -1,0 +1,95 @@
+---
+title: "Knowledge base"
+description: "Search the RAG knowledge base that powers architectural recommendations."
+---
+
+The knowledge base is the retrieval backbone of SoftArchitect AI. It stores architecture patterns, tech-stack guides, and best-practice documents as vector embeddings in ChromaDB. The chat endpoints automatically query this base on every request — the endpoints below expose direct access.
+
+<Note>
+  The knowledge base endpoints are under active development. The search endpoint currently returns a placeholder response. Ingest and status endpoints are planned for a future phase.
+</Note>
+
+---
+
+## GET /api/v1/knowledge/search
+
+Search the knowledge base using a query string. Returns relevant documents ranked by semantic similarity.
+
+<Warning>
+  This endpoint is not yet implemented. It returns a placeholder response and will be fully built in Phase 2.
+</Warning>
+
+### Current response
+
+```json
+{
+  "message": "Knowledge search not yet implemented"
+}
+```
+
+### Planned request parameters
+
+The following query parameters are planned for the Phase 2 implementation:
+
+<ParamField query="q" type="string" required>
+  The search query string. Will be embedded and used for semantic similarity search against the ChromaDB collection.
+</ParamField>
+
+<ParamField query="limit" type="integer" default="5">
+  Maximum number of documents to return.
+</ParamField>
+
+### Planned response shape
+
+Based on the existing ChromaDB integration, the completed endpoint is expected to return:
+
+```json
+{
+  "status": "ready",
+  "documents": 29,
+  "vectors": 934,
+  "collections": ["softarchitect"],
+  "results": [
+    {
+      "id": "doc_abc123",
+      "content": "...",
+      "metadata": {},
+      "score": 0.87
+    }
+  ]
+}
+```
+
+### Example
+
+<CodeGroup>
+```bash curl
+curl "http://localhost:8000/api/v1/knowledge/search?q=microservices+architecture"
+```
+</CodeGroup>
+
+---
+
+## Upcoming endpoints
+
+The following endpoints are planned for Phase 2 and are not yet available:
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/knowledge/ingest` | Ingest documents into the global knowledge base |
+| `GET` | `/api/v1/knowledge/status` | Return collection stats (document count, vector count, status) |
+
+The `/knowledge/status` endpoint will return a response in this format:
+
+```json
+{
+  "status": "ready",
+  "documents": 29,
+  "vectors": 934,
+  "collections": ["softarchitect"]
+}
+```
+
+<Note>
+  To ingest documents into a **per-project** vector store right now, use the [projects ingest endpoint](/api/projects).
+</Note>

@@ -1,0 +1,202 @@
+---
+title: "Your first project"
+description: "A complete walkthrough of creating your first software architecture with SoftArchitect AI."
+---
+
+This guide walks you through creating a complete software architecture specification from scratch. By the end, you will have a full set of technical documents ready to hand to your development team — or use directly with an AI coding assistant.
+
+<Info>
+  This guide assumes you have already installed SoftArchitect AI and ingested the knowledge base. If you haven't, start with the [quickstart](/quickstart) and [knowledge ingestion](/guides/knowledge-ingestion) guides first.
+</Info>
+
+## The Guided Architectural Workflow
+
+SoftArchitect AI structures every project around a six-phase **Guided Architectural Workflow**:
+
+```text
+Phase 1 — Context     → Who are you building for, and why?
+Phase 2 — Requirements → What does the system need to do?
+Phase 3 — Architecture → How should it be built?
+Phase 4 — UX/UI        → What does it look like?
+Phase 5 — Planning     → How do we ship it?
+Phase 6 — ROOT Synthesis → AGENTS.md, RULES.md, README
+```
+
+Each phase produces concrete documents. The AI uses RAG over its knowledge base to ground every recommendation in proven patterns (SOLID, Clean Architecture, OWASP) before the first line of code is written.
+
+---
+
+## Step-by-step walkthrough
+
+<Steps>
+  <Step title="Launch SoftArchitect AI">
+    Start the Flutter desktop application. On Linux you can launch it directly from the terminal:
+
+    ```bash
+    ./scripts/devops/LAUNCH_FLUTTER_APP_DEV.sh
+    ```
+
+    The app connects to the backend API at `http://localhost:8000`. Confirm the status indicator in the bottom bar shows **Connected** before proceeding.
+
+    <Tip>
+      Make sure all backend services are running first: `./scripts/devops/start_stack.sh`
+    </Tip>
+  </Step>
+
+  <Step title="Create a new project">
+    Click **New project** on the dashboard. You will be prompted for:
+
+    - **Project name** — a short identifier (e.g., `inventory-service`)
+    - **Output folder** — where generated documents will be saved
+
+    SoftArchitect AI creates a project record and opens the chat interface, ready for Phase 1.
+  </Step>
+
+  <Step title="Context gathering (Phase 1)">
+    The AI begins the interview by asking about your project's context. Expect questions covering:
+
+    - **Domain** — what business problem are you solving?
+    - **Team size** — solo developer, small team, or enterprise?
+    - **Constraints** — budget, timeline, compliance requirements (GDPR, HIPAA, etc.)
+    - **Target users** — who will use the system and how?
+
+    The AI uses your answers to build the first three documents:
+
+    | Document | Purpose |
+    |---|---|
+    | `PROJECT_MANIFESTO` | Mission, values, and success criteria |
+    | `DOMAIN_LANGUAGE` | Ubiquitous language glossary (DDD) |
+    | `USER_JOURNEY_MAP` | Personas and user flow diagrams |
+
+    <Tip>
+      Be specific. "A B2B SaaS for warehouse managers at 50-person logistics companies" gives the AI much better context than "a web app for businesses".
+    </Tip>
+  </Step>
+
+  <Step title="Requirements analysis (Phase 2)">
+    The AI transforms your business description into structured technical requirements:
+
+    - Prioritised user stories (exported as a JSON backlog)
+    - Functional and non-functional requirements
+    - Security and privacy policy grounded in OWASP Top 10
+    - Compliance matrix (GDPR/CCPA/WCAG)
+
+    You review each document in the chat panel and can ask the AI to revise any section before moving on.
+
+    <Note>
+      The AI will ask stack-specific questions if you have selected a [Tech Pack](/guides/tech-packs). For example, if you chose the Flutter pack, it will ask about target platforms and offline requirements.
+    </Note>
+  </Step>
+
+  <Step title="Architecture design (Phase 3)">
+    This is the core phase. The AI designs the technical foundation by producing six documents:
+
+    | Document | Key deliverable |
+    |---|---|
+    | `TECH_STACK_DECISION` | Recommended stack with trade-off analysis |
+    | `DATA_MODEL_SCHEMA` | Entity-relationship diagram and table schemas |
+    | `PROJECT_STRUCTURE_MAP` | Directory tree with Clean Architecture layers |
+    | `API_INTERFACE_CONTRACT` | OpenAPI-style endpoint specifications |
+    | `SECURITY_THREAT_MODEL` | STRIDE threat matrix |
+    | `ARCH_DECISION_RECORDS` | ADR log (why X was chosen over Y) |
+
+    All recommendations enforce **SOLID principles** and **Clean Architecture** (hexagonal ports-and-adapters). The RAG engine retrieves relevant rules from the [Tech Packs knowledge base](/guides/tech-packs) to back every recommendation with concrete evidence.
+  </Step>
+
+  <Step title="UX/UI planning (Phase 4)">
+    With the architecture settled, the AI moves to user experience:
+
+    - **Design system** — component library, typography, colour tokens
+    - **UI wireframes & flows** — screen-by-screen mockup descriptions
+    - **Accessibility guide** — WCAG 2.1 AA compliance checklist
+
+    The AI references the User Journey Map from Phase 1 to ensure every screen serves a real user need.
+  </Step>
+
+  <Step title="Planning (Phase 5)">
+    The AI generates a development backlog and operational plan:
+
+    - **Roadmap** — phased release milestones tied to user stories
+    - **Testing strategy** — test pyramid with coverage targets (≥80%)
+    - **CI/CD pipeline** — GitHub Actions workflow definitions
+    - **Deployment infrastructure** — Docker Compose configuration
+
+    At this point you have 20 documents in your project.
+  </Step>
+
+  <Step title="ROOT synthesis (Phase 6)">
+    The final phase synthesises everything into four agent-ready files:
+
+    | File | Purpose |
+    |---|---|
+    | `RULES.md` | Code quality rules and conventions derived from your actual tech stack |
+    | `CONTRIBUTING.md` | PR process, branching strategy, and project conventions |
+    | `AGENTS.md` | Team structure, roles, and responsibilities |
+    | `README.md` | Complete project overview with quick-start guide |
+
+    These files are generated **last** intentionally. With 20+ documents in the RAG context window, the AI synthesises accurate, hallucination-free summaries rather than guessing from an empty slate.
+
+    <Warning>
+      Do not manually edit `RULES.md` or `AGENTS.md` before reviewing them. These files are designed to be placed in your source repository root, where AI coding assistants (Copilot, Cursor, etc.) will read them automatically.
+    </Warning>
+  </Step>
+</Steps>
+
+---
+
+## What you get
+
+After completing all six phases, your output folder contains 24 documents organised into phases:
+
+```text
+my-project/
+├── 10-CONTEXT/
+│   ├── PROJECT_MANIFESTO.md
+│   ├── DOMAIN_LANGUAGE.md
+│   └── USER_JOURNEY_MAP.md
+├── 20-REQUIREMENTS/
+│   ├── USER_STORIES_MASTER.json
+│   ├── REQUIREMENTS_MASTER.md
+│   ├── SECURITY_PRIVACY_POLICY.md
+│   └── COMPLIANCE_MATRIX.md
+├── 30-ARCHITECTURE/
+│   ├── TECH_STACK_DECISION.md
+│   ├── DATA_MODEL_SCHEMA.md
+│   ├── PROJECT_STRUCTURE_MAP.md
+│   ├── API_INTERFACE_CONTRACT.md
+│   ├── SECURITY_THREAT_MODEL.md
+│   └── ARCH_DECISION_RECORDS.md
+├── 35-UX_UI/
+│   ├── DESIGN_SYSTEM.md
+│   ├── UI_WIREFRAMES_FLOW.md
+│   └── ACCESSIBILITY_GUIDE.md
+├── 40-PLANNING/
+│   ├── ROADMAP_PHASES.md
+│   ├── TESTING_STRATEGY.md
+│   ├── CI_CD_PIPELINE.md
+│   └── DEPLOYMENT_INFRASTRUCTURE.md
+└── 00-ROOT/
+    ├── RULES.md
+    ├── CONTRIBUTING.md
+    ├── AGENTS.md
+    └── README.md
+```
+
+---
+
+## Tips for better recommendations
+
+<CardGroup cols={2}>
+  <Card title="Pick the right Tech Pack" icon="box">
+    Selecting a Tech Pack before you start tailors every question and recommendation to your stack. A Flutter + FastAPI + Firebase project gets different architecture patterns than a Spring Boot + PostgreSQL one.
+  </Card>
+  <Card title="Be precise about constraints" icon="sliders">
+    Mention hard constraints early: offline-first, GDPR data residency, sub-200ms latency SLA. The AI uses these to eliminate unsuitable patterns before recommending anything.
+  </Card>
+  <Card title="Iterate within a phase" icon="arrow-clockwise">
+    You can ask the AI to revise any document before moving to the next phase. Changing the data model in Phase 3 is free; changing it after Phase 5 generates more rework.
+  </Card>
+  <Card title="Tune context window for your model" icon="cpu">
+    If you are running a local Ollama model with an 8K context window, set `LLM_MAX_PROMPT_CHARS=30000` and `RAG_MAX_CHUNKS=2` in your `.env` to prevent out-of-memory errors.
+  </Card>
+</CardGroup>

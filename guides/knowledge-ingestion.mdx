@@ -1,0 +1,165 @@
+---
+title: "Knowledge ingestion"
+description: "How the technical knowledge base is loaded into ChromaDB so the RAG engine can retrieve architecture rules and stack-specific guidance."
+---
+
+Before SoftArchitect AI can make recommendations grounded in the knowledge base, its markdown files must be ingested into ChromaDB as vector embeddings. This process reads every markdown file under `packages/knowledge_base/`, splits the content into chunks, generates embeddings, and stores them in ChromaDB — your local vector database.
+
+Ingestion happens automatically when the API container starts. You only need to trigger it manually when you add or update Tech Packs or templates.
+
+<Note>
+  The `/api/v1/knowledge/ingest` and `/api/v1/knowledge/status` HTTP endpoints are planned for Phase 2 of the roadmap. Currently, knowledge base ingestion is handled on container startup and through the per-project document ingest endpoint described below.
+</Note>
+
+---
+
+## What gets ingested
+
+The ingestion pipeline processes three document collections:
+
+<CardGroup cols={3}>
+  <Card title="tech-packs" icon="box">
+    Stack-specific profiles and governance rules from `02-TECH-PACKS/`. This is what makes the AI stack-aware.
+  </Card>
+  <Card title="templates" icon="file-text">
+    Document generation templates from `01-TEMPLATES/`. These define the structure of every output document (manifesto, data model, ADRs, etc.).
+  </Card>
+  <Card title="examples" icon="book-open">
+    Worked examples from `MASTER_WORKFLOW_EXAMPLES/`. The AI uses these as few-shot references during generation.
+  </Card>
+</CardGroup>
+
+After a successful ingestion you should have **29 documents** and **934 vectors** across the three collections.
+
+---
+
+## Verifying the knowledge base
+
+After starting the stack, confirm ChromaDB is populated by querying its HTTP API directly:
+
+```bash
+# List all collections in ChromaDB
+curl http://localhost:8001/api/v1/collections
+```
+
+You should see the `softarchitect` collection. To count the embeddings in it:
+
+```bash
+curl http://localhost:8001/api/v1/collections/softarchitect/count
+```
+
+You can also inspect the stack containers to verify the API started cleanly:
+
+```bash
+docker logs sa_api --tail 50
+```
+
+Look for `Application startup complete` and the ChromaDB initialization messages.
+
+---
+
+## Ingesting per-project documents
+
+When the workflow generates a new architectural document (e.g. `PROJECT_MANIFESTO.md`), the Flutter client automatically sends it to the project's vector store via the ingest endpoint:
+
+```bash
+POST /api/v1/projects/{project_id}/documents/ingest
+```
+
+This stores the generated document as embeddings in a **project-specific** ChromaDB collection, separate from the global knowledge base. Future chat requests for that project can then retrieve context from previously generated documents.
+
+```bash
+curl -X POST \
+  "http://localhost:8000/api/v1/projects/YOUR_PROJECT_ID/documents/ingest" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "doc_name": "PROJECT_MANIFESTO.md",
+    "markdown_content": "# Project Manifesto\n\nThis project aims to..."
+  }'
+```
+
+```json
+{
+  "project_id": "YOUR_PROJECT_ID",
+  "doc_name": "PROJECT_MANIFESTO.md",
+  "chunks_ingested": 5
+}
+```
+
+<Tip>
+  This endpoint is idempotent — calling it again with the same content is safe. ChromaDB uses content-based SHA-256 IDs and upserts on collision, so no duplicates are created.
+</Tip>
+
+---
+
+## Collection breakdown
+
+| Collection | Source path | Contents |
+|---|---|---|
+| `softarchitect` (global KB) | `packages/knowledge_base/` | Architecture patterns, Tech Packs, templates, examples |
+| `project_{id}` (per-project) | Generated via API | Documents produced during the guided workflow for a specific project |
+
+---
+
+## When to re-ingest the global knowledge base
+
+Re-ingestion of the global knowledge base is needed whenever the source files change:
+
+- After adding a new custom Tech Pack to `02-TECH-PACKS/`
+- After updating an existing Tech Pack profile or rules file
+- After adding or modifying templates in `01-TEMPLATES/`
+- After pulling upstream changes that include knowledge base updates
+
+To force a clean re-ingest, restart the stack with a cleared ChromaDB data volume:
+
+```bash
+./scripts/devops/stop_stack.sh
+rm -rf infrastructure/chroma_data/
+./scripts/devops/start_stack.sh
+```
+
+The API container seeds ChromaDB on startup. Monitor progress:
+
+```bash
+docker logs -f sa_api
+```
+
+---
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="ChromaDB collection is empty after startup">
+    Common causes:
+
+    - **ChromaDB not ready** — run `docker ps` and confirm `sa_chromadb` shows `(healthy)`. If it shows `(starting)`, wait 15–30 seconds and check again.
+    - **Empty knowledge base directory** — confirm the files exist: `ls packages/knowledge_base/02-TECH-PACKS/`
+    - **API startup failure** — run `docker logs sa_api --tail 50` and look for errors during initialization.
+  </Accordion>
+
+  <Accordion title="curl to ChromaDB returns connection refused">
+    ChromaDB is exposed on port `8001` on the host (not `8000` — that is the API server). Check:
+
+    ```bash
+    curl http://localhost:8001/api/v1/heartbeat
+    ```
+
+    If this fails, confirm `sa_chromadb` is running: `docker ps | grep chromadb`.
+  </Accordion>
+
+  <Accordion title="Per-project ingest returns 400 or 500">
+    A `400` means the request payload is invalid — check that `doc_name` is 1–255 characters and `markdown_content` is not empty.
+
+    A `500` means the backend failed to write to ChromaDB. Check server logs:
+
+    ```bash
+    docker logs sa_api --tail 30
+    ```
+
+    Look for `Ingestion failed for project=` log lines.
+  </Accordion>
+
+  <Accordion title="Re-ingestion does not reflect updated files">
+    ChromaDB uses content-based IDs for upsert. If you renamed a file without changing its content, the old vectors remain under the old ID. Perform a clean re-ingestion by deleting `infrastructure/chroma_data/` before restarting.
+  </Accordion>
+</AccordionGroup>

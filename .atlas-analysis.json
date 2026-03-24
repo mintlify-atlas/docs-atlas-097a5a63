@@ -1,24 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "SoftArchitect AI",
+  "projectType": "saas",
+  "projectName": "SoftArchitect AI",
+  "projectDescription": "A local-first AI assistant that guides developers through software architecture design using RAG-powered contextual guidance, transforming abstract ideas into development-ready technical specifications.",
   "theme": "palm",
-  "colors": {
-    "primary": "#4F46E5",
-    "light": "#EEF2FF",
-    "dark": "#1E1B4B"
-  },
-  "favicon": "/favicon.svg",
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/Pitcher755/soft-architect-ai"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/Pitcher755/soft-architect-ai"
-    }
-  },
+  "primaryColor": "#4F46E5",
+  "lightColor": "#EEF2FF",
+  "darkColor": "#1E1B4B",
   "navigation": {
     "tabs": [
       {
@@ -94,5 +81,29 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Guided Architectural Workflow (Context → Requirements → Architecture → UX/UI → Planning)",
+    "RAG (Retrieval-Augmented Generation) over a curated technical knowledge base",
+    "Local-First Privacy Mode using Ollama for 100% offline AI processing",
+    "Hybrid LLM support: Ollama (local) and Groq/Gemini (cloud) providers",
+    "Tech Packs for stack-specific architecture rules (Flutter, Python, Firebase)",
+    "Context Factory generating AGENTS.md and RULES.md for AI copilots",
+    "Flutter Desktop frontend (Linux/Windows/macOS)",
+    "FastAPI + LangChain backend with streaming chat responses",
+    "ChromaDB vector store for semantic knowledge retrieval",
+    "Docker Compose one-command deployment in under 2 minutes"
+  ],
+  "publicApiSurface": [
+    "POST /api/v1/chat/stream — Streaming chat with RAG-augmented responses",
+    "POST /api/v1/chat/generate — Sequential document generation endpoint",
+    "GET /api/v1/projects — List all projects",
+    "POST /api/v1/projects — Create a new project",
+    "GET /api/v1/conversations — List conversations",
+    "GET /api/v1/knowledge/search — Search the knowledge base",
+    "POST /api/v1/knowledge/ingest — Ingest knowledge base documents",
+    "GET /api/v1/knowledge/status — Check knowledge base status",
+    "GET /api/v1/health — Health check endpoint",
+    "GET / — API root info"
+  ]
 }

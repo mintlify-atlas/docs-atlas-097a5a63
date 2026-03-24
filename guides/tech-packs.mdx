@@ -1,0 +1,177 @@
+---
+title: "Tech packs"
+description: "Stack-specific architecture rules and interview templates that configure the AI's domain knowledge for your chosen technologies."
+---
+
+Tech Packs are the modular knowledge units that make SoftArchitect AI stack-aware. Each pack is a self-contained **Technical Encyclopedia entry** for a specific technology: a profile describing when and why to use it, plus a set of enforceable governance rules that the AI applies when generating recommendations for your project.
+
+When you select a Tech Pack at project creation, the AI knows to ask Flutter-specific questions for a Flutter project, Python FastAPI patterns for a Python backend, and so on — rather than giving generic advice.
+
+---
+
+## What a Tech Pack contains
+
+Every Tech Pack follows the **Standard Schema** defined in `packages/knowledge_base/02-TECH-PACKS/_STANDARD_SCHEMA/` and consists of two files:
+
+<CardGroup cols={2}>
+  <Card title="00-TECH_PROFILE.md" icon="id-card">
+    Suitability analysis, trade-off matrix (learning curve, performance, scalability, ecosystem, LTS), system requirements, and compatible stack combinations.
+  </Card>
+  <Card title="01-RULES.md" icon="list-checks">
+    Mandatory governance rules: naming conventions, architectural principles (SOLID), security patterns, testing targets, linting tools, and CI/CD enforcement.
+  </Card>
+</CardGroup>
+
+Many packs also include a `KNOWLEDGE_BASE/` subdirectory with supplementary reference material — code patterns, anti-patterns, and worked examples — that the RAG engine retrieves during document generation.
+
+---
+
+## Available Tech Packs
+
+The knowledge base ships with 32 Tech Packs across six categories:
+
+### Frontend
+
+| Pack | Path |
+|---|---|
+| Flutter (mobile/desktop) | `FRONTEND/mobile-flutter/` |
+| Android — Kotlin | `FRONTEND/mobile-android-kotlin/` |
+| iOS — Swift | `FRONTEND/mobile-ios-swift/` |
+| React Native | `FRONTEND/mobile-react-native/` |
+| React | `FRONTEND/web-react/` |
+| Vue | `FRONTEND/web-vue/` |
+| Angular | `FRONTEND/web-angular/` |
+| Web (general) | `FRONTEND/web-general/` |
+
+### Backend
+
+| Pack | Path |
+|---|---|
+| Python — FastAPI | `BACKEND/python-fastapi/` |
+| Python — Django | `BACKEND/python-django/` |
+| Python — Flask | `BACKEND/python-flask/` |
+| Node.js — Express | `BACKEND/node-express/` |
+| Node.js — NestJS | `BACKEND/node-nest/` |
+| Java — Spring Boot | `BACKEND/java-springboot/` |
+| Go | `BACKEND/go-lang/` |
+| C# — .NET | `BACKEND/csharp-dotnet/` |
+| PHP — Laravel | `BACKEND/php-laravel/` |
+
+### AI engineering
+
+| Pack | Path |
+|---|---|
+| LangChain | `AI_ENGINEERING/llm-langchain/` |
+| Semantic Kernel | `AI_ENGINEERING/llm-semantic-kernel/` |
+| Ollama | `AI_ENGINEERING/model-ollama/` |
+| ChromaDB | `AI_ENGINEERING/vector-chromadb/` |
+| Pinecone | `AI_ENGINEERING/vector-pinecone/` |
+
+### Data
+
+| Pack | Path |
+|---|---|
+| Firebase / Firestore | `DATA/nosql-firebase/` |
+| PostgreSQL | `DATA/sql-postgresql/` |
+| MySQL | `DATA/sql-mysql/` |
+| Redis | `DATA/cache-redis/` |
+
+### DevOps & Cloud
+
+| Pack | Path |
+|---|---|
+| GitHub Actions | `DEVOPS_CLOUD/ci-github-actions/` |
+| Docker | `DEVOPS_CLOUD/container-docker/` |
+| Kubernetes | `DEVOPS_CLOUD/orchestration-k8s/` |
+| AWS | `DEVOPS_CLOUD/cloud-aws/` |
+| Azure | `DEVOPS_CLOUD/cloud-azure/` |
+
+### General
+
+| Pack | Path |
+|---|---|
+| Git conventions | `general/GIT_CONVENTIONS.md` |
+| OWASP Top 10 | `general/OWASP_TOP_10.md` |
+| TDD methodology | `general/TDD_METHODOLOGY.md` |
+
+---
+
+## How a Tech Pack is structured
+
+The **Flutter Tech Pack** (`FRONTEND/mobile-flutter/`) is a representative example.
+
+### Tech profile (`00-TECH_PROFILE.md`)
+
+The profile answers the key selection question: *"Is this technology the right fit?"*
+
+```text
+# Tech Profile: Google Flutter
+
+Category:   Cross-Platform UI Framework
+License:    BSD-3-Clause
+Language:   Dart 3.0+ (Sound Null Safety)
+Version:    Flutter 3.19+ (Stable Channel)
+```
+
+It includes a **suitability matrix** that the AI uses to either recommend or steer away from a technology:
+
+| Dimension | Rating | Comment |
+|---|:---:|---|
+| Development speed | 5/5 | Hot Reload changes code in milliseconds without losing state |
+| UI performance | 5/5 | Stable 60/120 FPS via AOT compilation |
+| Learning curve | 3/5 | ~4–6 weeks for productivity (Dart + Riverpod + declarative paradigm) |
+| Ecosystem | 4/5 | ~80k packages on pub.dev; accelerated growth |
+| LTS & viability | 5/5 | Backed by Google; used by Google Ads, Alibaba, BMW |
+
+The profile also documents **anti-patterns** (cases where the technology should not be used) and known **stack integration compatibility** with backends, auth providers, databases, and state management libraries.
+
+### Rules file (`01-RULES.md`)
+
+The rules file contains the governance layer that the AI injects directly into `RULES.md` and `AGENTS.md` when generating your project's root documents. For Flutter this includes:
+
+- Dart naming conventions (files: `snake_case.dart`, classes: `PascalCase`, private members: `_prefix`)
+- Riverpod 2.0 state management patterns (and why `setState` is an anti-pattern for complex logic)
+- SOLID principles mapped to Flutter's widget and provider architecture
+- Mandatory linting with `flutter_lints` (strict mode)
+- Test coverage target ≥80% with `flutter_test` and `mockito`
+- Security rules: never use deprecated `withOpacity()`, always use `withValues(alpha: x.x)`
+
+---
+
+## How the AI uses Tech Packs
+
+During the interview (Phase 1 – Context and Phase 2 – Requirements), the AI queries the vector store for Tech Pack content relevant to the technologies you mention. This drives stack-specific questions:
+
+- **Flutter pack loaded** → AI asks about target platforms (iOS/Android/Desktop/Web), offline requirements, and state management preferences
+- **FastAPI pack loaded** → AI asks about async requirements, dependency injection patterns, and whether you need WebSocket or SSE streaming
+- **Firebase pack loaded** → AI asks about real-time sync requirements, authentication strategy, and data residency constraints
+
+In Phase 3 (Architecture), the retrieved pack rules are injected into the RAG prompt so that `TECH_STACK_DECISION.md` and `ARCH_DECISION_RECORDS.md` cite concrete evidence from the knowledge base rather than generic opinions.
+
+---
+
+## Selecting a Tech Pack
+
+When you create a new project in the Flutter desktop app, the project setup dialog lists all available Tech Packs grouped by category. You can select multiple packs — for example, **Flutter** + **FastAPI** + **Firebase** + **GitHub Actions**.
+
+<Note>
+  You can also mention technologies during the interview conversation and the AI will automatically retrieve the relevant pack content from ChromaDB without requiring an explicit selection.
+</Note>
+
+---
+
+## Adding custom Tech Packs
+
+Custom packs are on the roadmap. The schema is already open: copy `_STANDARD_SCHEMA/00-TECH_PROFILE.template.md` and `_STANDARD_SCHEMA/01-RULES.template.md`, fill in the `{{PLACEHOLDERS}}`, place your files in a new subdirectory under the appropriate category folder, then [re-ingest the knowledge base](/guides/knowledge-ingestion).
+
+```text
+packages/knowledge_base/02-TECH-PACKS/
+└── BACKEND/
+    └── my-custom-framework/       ← new directory
+        ├── 00-TECH_PROFILE.md
+        ├── 01-RULES.md
+        └── KNOWLEDGE_BASE/        ← optional supplementary docs
+            └── patterns.md
+```
+
+After ingestion, the AI will use your custom pack exactly like the built-in ones.

@@ -1,0 +1,286 @@
+---
+title: "Chat"
+description: "Streaming chat and document generation endpoints powered by RAG."
+---
+
+The chat endpoints drive the core SoftArchitect AI workflow: a user message is enriched with relevant context retrieved from the knowledge base (RAG) and streamed token-by-token back to the client as Server-Sent Events (SSE).
+
+All responses use `text/event-stream` — there is no synchronous JSON response endpoint for chat (the `/chat/message` endpoint is deprecated and returns `400`).
+
+---
+
+## POST /api/v1/chat/stream
+
+The primary chat endpoint. Accepts a `ChatRequest` body, retrieves context from ChromaDB, and streams the LLM response as SSE events.
+
+### Request
+
+<ParamField body="conversation_id" type="string (UUID)" required>
+  Unique conversation identifier. Associates this message with an existing conversation session.
+</ParamField>
+
+<ParamField body="message" type="string" required>
+  The user's message or architectural requirements. Maximum 20,000 characters (configurable via `CHAT_MAX_MESSAGE_LENGTH`). Input is sanitized server-side to prevent XSS and prompt injection.
+</ParamField>
+
+<ParamField body="project_id" type="string (UUID)" required>
+  The project this message belongs to. Used to scope RAG retrieval to the project's vector store.
+</ParamField>
+
+<ParamField body="user_name" type="string" default="Developer">
+  User's display name, injected into the LLM system prompt for personalization. Maximum 100 characters.
+</ParamField>
+
+<ParamField body="doc_type" type="string">
+  The document type to generate. Instructs the Sequential Orchestrator to load the matching template and example. When omitted defaults to `"UNSORTED"`.
+
+  Examples: `PROJECT_MANIFESTO`, `ARCHITECTURE_SPEC`, `DOMAIN_LANGUAGE`, `TECH_STACK`.
+</ParamField>
+
+<ParamField body="history" type="array">
+  Previous conversation turns for multi-turn continuity. Maximum messages is configurable via `CHAT_MAX_HISTORY_MESSAGES` (default `100` in code, `50` in `.env.example` template). Each entry must have `role` and `content` fields.
+
+  <Expandable title="history item">
+    <ParamField body="role" type="string" required>
+      Message role. One of: `user`, `assistant`, `system`.
+    </ParamField>
+    <ParamField body="content" type="string" required>
+      Message text. Maximum 20,000 characters.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="project_context" type="object">
+  All documents already generated for this project. Keys are relative file paths (e.g., `"PROJECT_MANIFESTO.md"`), values are the full file contents. Injected into the LLM prompt to maintain consistency across documents.
+</ParamField>
+
+<ParamField body="metadata" type="object">
+  Optional key-value metadata from the client. Ignored by the server but stored for traceability.
+</ParamField>
+
+### Response
+
+Returns a `text/event-stream` response with the following headers:
+
+```
+Cache-Control: no-cache
+Connection: keep-alive
+X-Accel-Buffering: no
+```
+
+Three SSE event types are emitted:
+
+#### `event: message`
+
+Emitted for each streamed token:
+
+```
+event: message
+data: {"token": "Here", "is_final": false}
+```
+
+<ResponseField name="token" type="string">
+  A single token or word fragment from the LLM output stream.
+</ResponseField>
+
+<ResponseField name="is_final" type="boolean">
+  Always `false` for `message` events. Set to `true` only in the final `done` event.
+</ResponseField>
+
+#### `event: done`
+
+Emitted once when the stream completes:
+
+```
+event: done
+data: {"full_response": "", "sources": ["PROJECT_MANIFESTO"], "metadata": {"template_used": "PROJECT_MANIFESTO"}}
+```
+
+<ResponseField name="full_response" type="string">
+  Full concatenated response. Currently empty — clients should assemble tokens from `message` events.
+</ResponseField>
+
+<ResponseField name="sources" type="array">
+  Document types used as context for this generation.
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  Generation metadata.
+
+  <Expandable title="metadata fields">
+    <ResponseField name="template_used" type="string">
+      The template identifier that was applied.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### `event: error`
+
+Emitted when a recoverable or unrecoverable error occurs during streaming:
+
+```
+event: error
+data: {"error": "AI Engine is unreachable", "code": "LLM_CONNECTION_ERROR", "retry": true}
+```
+
+<ResponseField name="error" type="string">
+  Human-readable error description.
+</ResponseField>
+
+<ResponseField name="code" type="string">
+  Machine-readable error code. Possible values:
+  - `LLM_CONNECTION_ERROR` — AI engine unreachable
+  - `RAG_RETRIEVAL_ERROR` — knowledge base search failed
+  - `STREAM_ERROR` — unexpected error during streaming
+</ResponseField>
+
+<ResponseField name="retry" type="boolean">
+  Whether the client should automatically retry. `true` for transient errors (connection), `false` for persistent failures.
+</ResponseField>
+
+### Errors
+
+| Status | Condition |
+|---|---|
+| `422` | Pydantic validation failed (e.g., message too long, invalid history role) |
+| `403` | Invalid or missing `X-API-Key` header (when API key is configured) |
+
+### Example
+
+<CodeGroup>
+```bash curl
+curl -X POST http://localhost:8000/api/v1/chat/stream \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-key-here" \
+  --no-buffer \
+  -d '{
+    "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+    "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "message": "Generate a project manifesto for a Flutter task manager app",
+    "doc_type": "PROJECT_MANIFESTO",
+    "user_name": "Developer"
+  }'
+```
+</CodeGroup>
+
+**Example SSE output:**
+
+```
+event: message
+data: {"token": "#", "is_final": false}
+
+event: message
+data: {"token": " Project", "is_final": false}
+
+event: message
+data: {"token": " Manifesto", "is_final": false}
+
+event: done
+data: {"full_response": "", "sources": ["PROJECT_MANIFESTO"], "metadata": {"template_used": "PROJECT_MANIFESTO"}}
+```
+
+---
+
+## POST /api/v1/chat/generate
+
+Legacy streaming document generation endpoint. Kept for backward compatibility with older client versions. New clients should prefer `/api/v1/chat/stream`.
+
+Uses a different SSE event format (`event: token` instead of `event: message`) and does not go through FastAPI dependency injection.
+
+### Request
+
+<ParamField body="message" type="string" required>
+  User message or requirements text.
+</ParamField>
+
+<ParamField body="doc_type" type="string" required>
+  Document type identifier (e.g., `PROJECT_MANIFESTO`).
+</ParamField>
+
+<ParamField body="project_context" type="object" default="{}">
+  Arbitrary key-value project metadata injected into the orchestrator context.
+</ParamField>
+
+<ParamField body="chat_history" type="array" default="[]">
+  Previous conversation turns.
+
+  <Expandable title="chat history item">
+    <ParamField body="role" type="string" required>
+      Message role: `user`, `assistant`, or `system`. Extra fields (e.g., `id`, `timestamp`) are silently ignored.
+    </ParamField>
+    <ParamField body="content" type="string" required>
+      Message text.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+Returns a `text/event-stream` response. Three SSE event types:
+
+#### `event: token`
+
+```
+event: token
+data: {"token": "Architecture", "index": 0}
+```
+
+<ResponseField name="token" type="string">
+  A single token from the LLM output.
+</ResponseField>
+
+<ResponseField name="index" type="integer">
+  Token sequence index. Currently always `0`.
+</ResponseField>
+
+#### `event: done`
+
+```
+event: done
+data: {"total_tokens": 0, "duration_ms": 0}
+```
+
+<ResponseField name="total_tokens" type="integer">
+  Total tokens generated. Currently always `0`.
+</ResponseField>
+
+<ResponseField name="duration_ms" type="integer">
+  Generation duration in milliseconds. Currently always `0`.
+</ResponseField>
+
+#### `event: error`
+
+```
+event: error
+data: {"code": "RAG_001", "message": "RAG operation failed"}
+```
+
+<ResponseField name="code" type="string">
+  Application error code (e.g., `RAG_001`, `LLM_001`, `ERR`).
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error description.
+</ResponseField>
+
+### Errors
+
+| Status | Condition |
+|---|---|
+| `500` | Failed to initialize the streaming generator |
+
+### Example
+
+<CodeGroup>
+```bash curl
+curl -X POST http://localhost:8000/api/v1/chat/generate \
+  -H "Content-Type: application/json" \
+  --no-buffer \
+  -d '{
+    "message": "Design a microservices architecture for an e-commerce platform",
+    "doc_type": "ARCHITECTURE_SPEC",
+    "project_context": {},
+    "chat_history": []
+  }'
+```
+</CodeGroup>
